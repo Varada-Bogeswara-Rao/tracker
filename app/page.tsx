@@ -429,6 +429,7 @@ export default function Home() {
   const [entries, setEntries] = useState<Entry[]>(sortEntries(starterWorkoutEntries));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<"log" | "history" | "analytics">("log");
   const [activeProfileId, setActiveProfileId] = useState(DEFAULT_PROFILE_ID);
   const [compareProfileId, setCompareProfileId] = useState(FRIEND_PROFILE_ID);
   const [newProfileName, setNewProfileName] = useState("");
@@ -975,8 +976,12 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-black text-zinc-100">
-      <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-zinc-950 text-zinc-100 relative overflow-hidden">
+      {/* Premium Ambient Background Glows */}
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-violet-950/15 blur-[120px] pointer-events-none" />
+      <div className="absolute top-[-20%] right-[-10%] w-[60%] h-[60%] rounded-full bg-indigo-950/20 blur-[150px] pointer-events-none" />
+
+      <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 relative z-10">
         <header className="flex flex-col gap-5 border-b border-zinc-900 pb-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
@@ -986,7 +991,7 @@ export default function Home() {
               Workout tracker
             </h1>
           </div>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2 md:gap-3">
             <Metric label="Active" value={activeProfile.name} />
             <Metric label="Sets" value={activeWorkoutEntries.length.toString()} />
             <Metric label="Volume" value={profileVolume(activeWorkoutEntries).toLocaleString()} />
@@ -999,16 +1004,59 @@ export default function Home() {
           </div>
         ) : null}
 
-        <section className="grid gap-3 rounded-md border border-zinc-900 bg-zinc-950 p-4 lg:grid-cols-[1fr_320px]">
+        {/* Premium Mobile Tab Selector */}
+        <div className="flex lg:hidden p-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800/40 backdrop-blur-md">
+          <button
+            type="button"
+            onClick={() => setMobileTab("log")}
+            className={`flex-1 flex flex-col items-center justify-center py-2 rounded-lg text-[11px] font-bold tracking-wide transition-all ${
+              mobileTab === "log"
+                ? "bg-white text-black shadow-md shadow-black/10 scale-[1.02]"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            <span className="text-sm mb-0.5">📝</span>
+            Log Set
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab("history")}
+            className={`flex-1 flex flex-col items-center justify-center py-2 rounded-lg text-[11px] font-bold tracking-wide transition-all ${
+              mobileTab === "history"
+                ? "bg-white text-black shadow-md shadow-black/10 scale-[1.02]"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            <span className="text-sm mb-0.5">📊</span>
+            History
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab("analytics")}
+            className={`flex-1 flex flex-col items-center justify-center py-2 rounded-lg text-[11px] font-bold tracking-wide transition-all ${
+              mobileTab === "analytics"
+                ? "bg-white text-black shadow-md shadow-black/10 scale-[1.02]"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            <span className="text-sm mb-0.5">🏆</span>
+            Analytics
+          </button>
+        </div>
+
+        {/* Profiles Section */}
+        <section className={`grid gap-4 rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4 lg:grid-cols-[1fr_320px] ${
+          mobileTab === "analytics" ? "hidden lg:grid" : "grid"
+        }`}>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-600">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
               Profiles
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {profiles.map((profile) => (
                 <div
                   key={profile.id}
-                  className={`flex h-10 items-center overflow-hidden rounded-md border transition ${
+                  className={`flex h-10 items-center overflow-hidden rounded-lg border transition ${
                     profile.id === activeProfile.id
                       ? "border-white bg-white text-black"
                       : "border-zinc-800 text-zinc-300 hover:border-zinc-500"
@@ -1041,38 +1089,39 @@ export default function Home() {
             <input
               value={newProfileName}
               onChange={(event) => setNewProfileName(event.target.value)}
-              className="h-10 min-w-0 flex-1 rounded-md border border-zinc-800 bg-black px-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-zinc-500"
+              className="h-10 min-w-0 flex-1 rounded-lg border border-zinc-800 bg-black/60 px-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-zinc-500 focus:ring-1 focus:ring-zinc-800"
               placeholder="Add friend"
             />
-            <button className="h-10 rounded-md border border-zinc-700 px-4 text-sm font-semibold text-zinc-100 transition hover:border-zinc-400">
+            <button className="h-10 rounded-lg border border-zinc-700 px-4 text-sm font-semibold text-zinc-100 transition hover:border-zinc-400 hover:bg-zinc-900/50">
               Add
             </button>
           </form>
         </section>
 
-        <div className="grid gap-5 lg:grid-cols-[390px_1fr]">
-          <section className="space-y-4">
+        <div className="grid gap-6 lg:grid-cols-[390px_1fr]">
+          {/* Left Column: Logging Inputs (Add Set, Rest Day, Notes, Exercises) */}
+          <section className={`space-y-4 lg:block ${mobileTab === "log" ? "block" : "hidden"}`}>
             <form
               onSubmit={(event) => void addWorkout(event)}
-              className="rounded-md border border-zinc-900 bg-zinc-950 p-4"
+              className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4"
             >
               <h2 className="text-base font-semibold text-white">
                 Add set for {activeProfile.name}
               </h2>
-              <div className="mt-4 grid gap-3">
+              <div className="mt-4 grid gap-3.5">
                 <FieldLabel label="Date">
                   <input
                     type="date"
                     value={date}
                     onChange={(event) => setDate(event.target.value)}
-                    className={inputClassName}
+                    className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80 focus:ring-1 focus:ring-violet-500/20`}
                   />
                 </FieldLabel>
                 <FieldLabel label="Body part">
                   <select
                     value={bodyPart}
                     onChange={(event) => selectBodyPart(event.target.value)}
-                    className={selectClassName}
+                    className={`${selectClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
                   >
                     {bodyParts.map((part) => (
                       <option key={part}>{part}</option>
@@ -1083,7 +1132,7 @@ export default function Home() {
                   <select
                     value={exercise}
                     onChange={(event) => setExercise(event.target.value)}
-                    className={selectClassName}
+                    className={`${selectClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
                   >
                     {catalogExercises.map((catalogExercise) => (
                       <option key={catalogExercise}>{catalogExercise}</option>
@@ -1094,32 +1143,32 @@ export default function Home() {
                   <p className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
                     Set number
                   </p>
-                  <div className="mt-1.5 grid grid-cols-5 gap-2">
+                  <div className="mt-1.5 grid grid-cols-5 gap-1.5">
                     {["1", "2", "3", "4", "5"].map((number) => (
                       <button
                         key={number}
                         type="button"
                         onClick={() => setSetNumber(number)}
-                        className={`h-10 rounded-md border text-sm font-semibold transition ${
+                        className={`h-10 rounded-lg border text-sm font-semibold transition ${
                           setNumber === number
                             ? "border-white bg-white text-black"
-                            : "border-zinc-800 bg-black text-zinc-400 hover:border-zinc-500 hover:text-white"
+                            : "border-zinc-800 bg-black/40 text-zinc-400 hover:border-zinc-500 hover:text-white"
                         }`}
                       >
-                        Set {number}
+                        {number}
                       </button>
                     ))}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <FieldLabel label="Weight">
+                  <FieldLabel label="Weight (kg)">
                     <input
                       type="number"
                       min="0"
                       step="0.5"
                       value={weight}
                       onChange={(event) => setWeight(event.target.value)}
-                      className={inputClassName}
+                      className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
                     />
                   </FieldLabel>
                   <FieldLabel label="Reps">
@@ -1128,7 +1177,7 @@ export default function Home() {
                       min="0"
                       value={reps}
                       onChange={(event) => setReps(event.target.value)}
-                      className={inputClassName}
+                      className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
                     />
                   </FieldLabel>
                 </div>
@@ -1136,17 +1185,17 @@ export default function Home() {
                   <input
                     value={note}
                     onChange={(event) => setNote(event.target.value)}
-                    className={inputClassName}
-                    placeholder="2nd set, felt easy"
+                    className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                    placeholder="e.g., Felt strong, good speed"
                   />
                 </FieldLabel>
               </div>
-              <div className="mt-4 rounded-md border border-zinc-900 bg-black p-3">
+              <div className="mt-4 rounded-xl border border-zinc-800 bg-black/35 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
                     Last time
                   </p>
-                  <span className="text-xs text-zinc-600">
+                  <span className="text-xs text-zinc-500">
                     {previousExerciseEntries[0]?.date || "No history"}
                   </span>
                 </div>
@@ -1155,13 +1204,13 @@ export default function Home() {
                     previousExerciseEntries.map((entry, index) => (
                       <div
                         key={entry.id}
-                        className="grid grid-cols-[56px_1fr_72px] gap-2 rounded-md border border-zinc-900 px-3 py-2 text-sm"
+                        className="grid grid-cols-[56px_1fr_48px] gap-2 rounded-lg border border-zinc-850 bg-zinc-900/10 px-3 py-2 text-xs"
                       >
                         <span className="text-zinc-500">
                           Set {getSetOrder(entry, index)}
                         </span>
-                        <span className="font-semibold text-zinc-100">
-                          {entry.weight || "-"} x {entry.reps || "-"}
+                        <span className="font-semibold text-zinc-200">
+                          {entry.weight || "-"} kg x {entry.reps || "-"}
                         </span>
                         <button
                           type="button"
@@ -1170,59 +1219,59 @@ export default function Home() {
                             setReps(String(entry.reps));
                             setSetNumber(String(getSetOrder(entry, index)));
                           }}
-                          className="text-right text-xs font-semibold text-zinc-400 transition hover:text-white"
+                          className="text-right text-xs font-semibold text-violet-400 transition hover:text-violet-300"
                         >
                           Use
                         </button>
                       </div>
                     ))
                   ) : (
-                    <p className="text-sm text-zinc-500">
-                      No previous sets for this exercise.
+                    <p className="text-xs text-zinc-500 italic">
+                      No previous sets logged.
                     </p>
                   )}
                 </div>
               </div>
-              <button className="mt-4 h-11 w-full rounded-md bg-white px-4 text-sm font-semibold text-black transition hover:bg-zinc-200">
+              <button className="mt-4 h-11 w-full rounded-lg bg-white px-4 text-sm font-semibold text-black transition hover:bg-zinc-200 hover:scale-[1.01] active:scale-[0.99] duration-150">
                 Add set
               </button>
             </form>
 
-            <section className="rounded-md border border-zinc-900 bg-zinc-950 p-4">
+            <section className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4">
               <h2 className="text-base font-semibold text-white">Rest day</h2>
-              <div className="mt-4 grid gap-3">
+              <div className="mt-4 grid gap-3.5">
                 <FieldLabel label="Date">
                   <input
                     type="date"
                     value={date}
                     onChange={(event) => setDate(event.target.value)}
-                    className={inputClassName}
+                    className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
                   />
                 </FieldLabel>
                 <FieldLabel label="Note">
                   <input
                     value={restNote}
                     onChange={(event) => setRestNote(event.target.value)}
-                    className={inputClassName}
-                    placeholder="Sleep, soreness, travel"
+                    className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                    placeholder="Sleep, soreness, travel, etc."
                   />
                 </FieldLabel>
               </div>
               <button
                 type="button"
                 onClick={() => void addRestDay()}
-                className="mt-4 h-11 w-full rounded-md border border-zinc-700 px-4 text-sm font-semibold text-zinc-100 transition hover:border-zinc-400 hover:bg-zinc-900"
+                className="mt-4 h-11 w-full rounded-lg border border-zinc-700 px-4 text-sm font-semibold text-zinc-100 transition hover:border-zinc-400 hover:bg-zinc-900/50"
               >
                 Mark rest day
               </button>
             </section>
 
-            <section className="rounded-md border border-zinc-900 bg-zinc-950 p-4">
+            <section className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4">
               <h2 className="text-base font-semibold text-white">Paste notes</h2>
               <textarea
                 value={quickNotes}
                 onChange={(event) => setQuickNotes(event.target.value)}
-                className="mt-4 min-h-44 w-full resize-y rounded-md border border-zinc-800 bg-black p-3 text-sm leading-6 text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-zinc-500"
+                className="mt-4 min-h-36 w-full resize-y rounded-lg border border-zinc-800 bg-black/50 p-3 text-xs leading-5 text-zinc-200 outline-none transition placeholder:text-zinc-700 focus:border-zinc-500"
                 placeholder={`20 *12 1st set smith machine squats
 25* 7 2nd
 25 *8 3 rd
@@ -1231,24 +1280,24 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => void importQuickNotes()}
-                className="mt-3 h-11 w-full rounded-md border border-zinc-700 px-4 text-sm font-semibold text-zinc-100 transition hover:border-zinc-400 hover:bg-zinc-900"
+                className="mt-3 h-11 w-full rounded-lg border border-zinc-700 px-4 text-sm font-semibold text-zinc-100 transition hover:border-zinc-400 hover:bg-zinc-900/50"
               >
                 Import notes
               </button>
             </section>
 
-            <section className="rounded-md border border-zinc-900 bg-zinc-950 p-4">
+            <section className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4">
               <h2 className="text-base font-semibold text-white">Exercise list</h2>
               <div className="mt-4 grid gap-3">
                 {bodyParts.map((part) => (
                   <div
                     key={part}
-                    className="rounded-md border border-zinc-900 bg-black p-3"
+                    className="rounded-lg border border-zinc-850 bg-black/45 p-3"
                   >
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
                       {part}
                     </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="mt-2 flex flex-wrap gap-1.5">
                       {exerciseCatalog[part as keyof typeof exerciseCatalog].map(
                         (catalogExercise) => (
                           <button
@@ -1258,7 +1307,7 @@ export default function Home() {
                               setBodyPart(part);
                               setExercise(catalogExercise);
                             }}
-                            className="rounded-md border border-zinc-800 px-2.5 py-1.5 text-left text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:text-white"
+                            className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-2.5 py-1.5 text-left text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:text-white"
                           >
                             {catalogExercise}
                           </button>
@@ -1271,277 +1320,486 @@ export default function Home() {
             </section>
           </section>
 
-          <section className="space-y-4">
-            <div className="rounded-md border border-zinc-900 bg-zinc-950 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-base font-semibold text-white">Compare</h2>
-                <select
-                  value={compareProfile.id}
-                  onChange={(event) => setCompareProfileId(event.target.value)}
-                  className={selectClassName}
-                >
-                  {profiles
-                    .filter((profile) => profile.id !== activeProfile.id)
-                    .map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </option>
-                    ))}
-                  {profiles.length === 1 && (
-                    <option value={activeProfile.id}>{activeProfile.name}</option>
-                  )}
-                </select>
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <CompareMetric
-                  label="Volume"
-                  left={profileVolume(activeWorkoutEntries).toLocaleString()}
-                  right={profileVolume(compareWorkoutEntries).toLocaleString()}
-                />
-                <CompareMetric
-                  label="Sets"
-                  left={activeWorkoutEntries.length.toString()}
-                  right={compareWorkoutEntries.length.toString()}
-                />
-                <CompareMetric
-                  label="Exercises"
-                  left={new Set(activeWorkoutEntries.map((entry) => entry.exercise)).size.toString()}
-                  right={new Set(compareWorkoutEntries.map((entry) => entry.exercise)).size.toString()}
-                />
-              </div>
-
-              <div className="mt-4 overflow-hidden rounded-md border border-zinc-900">
-                <div className="grid grid-cols-[1fr_84px_84px_72px] gap-3 border-b border-zinc-900 bg-black px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-600 sm:grid-cols-[1fr_110px_110px_120px]">
-                  <span>Exercise</span>
-                  <span>{activeProfile.name}</span>
-                  <span>{compareProfile.name}</span>
-                  <span>Lead</span>
-                </div>
-                {comparisonRows.map((row) => (
-                  <div
-                    key={row.name}
-                    className="grid grid-cols-[1fr_84px_84px_72px] gap-3 border-b border-zinc-900 px-4 py-3 text-sm last:border-b-0 sm:grid-cols-[1fr_110px_110px_120px]"
+          {/* Right Column: History & Analytics */}
+          <section className="space-y-6">
+            {/* Analytics Components (Compare, Progress Grid, Set Breakdown) */}
+            <div className={`space-y-6 lg:block ${mobileTab === "analytics" ? "block" : "hidden"}`}>
+              <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h2 className="text-base font-semibold text-white">Compare</h2>
+                  <select
+                    value={compareProfile.id}
+                    onChange={(event) => setCompareProfileId(event.target.value)}
+                    className={`${selectClassName} bg-black/50 border-zinc-800/80 focus:border-zinc-500`}
                   >
-                    <span className="font-medium text-white">{row.name}</span>
-                    <span className="text-zinc-300">{row.leftBest}</span>
-                    <span className="text-zinc-300">{row.rightBest}</span>
-                    <span className="text-zinc-500">{row.leader}</span>
+                    {profiles
+                      .filter((profile) => profile.id !== activeProfile.id)
+                      .map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name}
+                        </option>
+                      ))}
+                    {profiles.length === 1 && (
+                      <option value={activeProfile.id}>{activeProfile.name}</option>
+                    )}
+                  </select>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <CompareMetric
+                    label="Volume"
+                    left={profileVolume(activeWorkoutEntries).toLocaleString()}
+                    right={profileVolume(compareWorkoutEntries).toLocaleString()}
+                  />
+                  <CompareMetric
+                    label="Sets"
+                    left={activeWorkoutEntries.length.toString()}
+                    right={compareWorkoutEntries.length.toString()}
+                  />
+                  <CompareMetric
+                    label="Exercises"
+                    left={new Set(activeWorkoutEntries.map((entry) => entry.exercise)).size.toString()}
+                    right={new Set(compareWorkoutEntries.map((entry) => entry.exercise)).size.toString()}
+                  />
+                </div>
+
+                <div className="mt-4 overflow-hidden rounded-xl border border-zinc-800/60">
+                  <div className="grid grid-cols-[1fr_80px_80px_70px] gap-2 border-b border-zinc-850 bg-black/60 px-3.5 py-3 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500 sm:grid-cols-[1fr_110px_110px_120px]">
+                    <span>Exercise</span>
+                    <span>{activeProfile.name}</span>
+                    <span>{compareProfile.name}</span>
+                    <span>Lead</span>
                   </div>
-                ))}
+                  {comparisonRows.map((row) => (
+                    <div
+                      key={row.name}
+                      className="grid grid-cols-[1fr_80px_80px_70px] gap-2 border-b border-zinc-850 bg-zinc-900/5 px-3.5 py-3 text-xs sm:text-sm last:border-b-0 sm:grid-cols-[1fr_110px_110px_120px]"
+                    >
+                      <span className="font-semibold text-white truncate">{row.name}</span>
+                      <span className="text-zinc-300 font-medium">{row.leftBest}</span>
+                      <span className="text-zinc-300 font-medium">{row.rightBest}</span>
+                      <span className="text-zinc-500 truncate">{row.leader}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div className="flex flex-col gap-3 rounded-md border border-zinc-900 bg-zinc-950 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-base font-semibold text-white">
-                {activeProfile.name} log
-              </h2>
-              <select
-                value={selectedExercise}
-                onChange={(event) => setSelectedExercise(event.target.value)}
-                className={selectClassName}
-              >
-                <option>All</option>
-                {exercises.map((name) => (
-                  <option key={name}>{name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {progress.map((item) => (
-                <article
-                  key={item.name}
-                  className="rounded-md border border-zinc-900 bg-zinc-950 p-4"
-                >
-                  <h3 className="text-sm font-semibold text-white">{item.name}</h3>
-                  <dl className="mt-4 grid grid-cols-3 gap-2 text-sm">
-                    <Stat label="Best" value={item.bestLabel} />
-                    <Stat label="Est. max" value={String(item.oneRepMax)} />
-                    <Stat label="Sets" value={String(item.totalSets)} />
-                  </dl>
-                </article>
-              ))}
-            </div>
-
-            <div className="rounded-md border border-zinc-900 bg-zinc-950 p-4">
-              <h2 className="text-base font-semibold text-white">Set breakdown</h2>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {setBreakdowns.map((item) => (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {progress.map((item) => (
                   <article
                     key={item.name}
-                    className="rounded-md border border-zinc-900 bg-black p-3"
+                    className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-white">{item.name}</h3>
-                      <span className="rounded-md border border-zinc-800 px-2 py-1 text-xs font-semibold text-zinc-400">
-                        {item.bodyPart}
-                      </span>
-                    </div>
-                    <div className="mt-3 grid gap-2">
-                      {item.sets.map((entry, index) => (
-                        <div
-                          key={entry.id}
-                          className="grid grid-cols-[56px_1fr_72px] gap-2 rounded-md border border-zinc-900 px-3 py-2 text-sm"
-                        >
-                          <span className="text-zinc-500">Set {getSetOrder(entry, index)}</span>
-                          <span className="font-semibold text-zinc-100">
-                            {entry.weight || "-"} x {entry.reps || "-"}
-                          </span>
-                          <span className="text-right text-zinc-500">
-                            {entry.date.slice(5)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                    <h3 className="text-sm font-semibold text-white truncate">{item.name}</h3>
+                    <dl className="mt-4 grid grid-cols-3 gap-2 text-xs text-zinc-400">
+                      <Stat label="Best" value={item.bestLabel} />
+                      <Stat label="Est. max" value={String(item.oneRepMax)} />
+                      <Stat label="Sets" value={String(item.totalSets)} />
+                    </dl>
                   </article>
                 ))}
               </div>
+
+              <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4">
+                <h2 className="text-base font-semibold text-white">Set breakdown</h2>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {setBreakdowns.map((item) => (
+                    <article
+                      key={item.name}
+                      className="rounded-xl border border-zinc-850 bg-black/45 p-3.5"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <h3 className="text-xs sm:text-sm font-semibold text-white truncate">{item.name}</h3>
+                        <span className="rounded-md border border-zinc-800 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
+                          {item.bodyPart}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {item.sets.map((entry, index) => (
+                          <div
+                            key={entry.id}
+                            className="grid grid-cols-[52px_1fr_56px] gap-2 rounded-lg border border-zinc-850 bg-zinc-900/10 px-3 py-2 text-xs"
+                          >
+                            <span className="text-zinc-500">Set {getSetOrder(entry, index)}</span>
+                            <span className="font-semibold text-zinc-200">
+                              {entry.weight || "-"} x {entry.reps || "-"}
+                            </span>
+                            <span className="text-right text-zinc-500 font-medium">
+                              {entry.date.slice(5)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            <div className="overflow-x-auto rounded-md border border-zinc-900 bg-zinc-950">
-              <div className="min-w-[900px]">
-                <div className="grid grid-cols-[92px_106px_96px_1fr_74px_58px_1fr_118px] gap-3 border-b border-zinc-900 bg-black px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-600">
-                  <span>Date</span>
-                  <span>Person</span>
-                  <span>Part</span>
-                  <span>Exercise</span>
-                  <span>Weight</span>
-                  <span>Reps</span>
-                  <span>Note</span>
-                  <span></span>
-                </div>
-                {filteredEntries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="grid grid-cols-[92px_106px_96px_1fr_74px_58px_1fr_118px] gap-3 border-b border-zinc-900 px-4 py-3 text-sm text-zinc-200 last:border-b-0"
-                  >
-                    {editingEntry?.id === entry.id ? (
-                      <>
-                        <input
-                          type="date"
-                          value={editingEntry.date}
-                          onChange={(event) =>
-                            updateEditingEntry("date", event.target.value)
-                          }
-                          className={compactInputClassName}
-                        />
-                        <select
-                          value={editingEntry.profileId}
-                          onChange={(event) =>
-                            updateEditingEntry("profileId", event.target.value)
-                          }
-                          className={compactSelectClassName}
-                        >
-                          {profiles.map((profile) => (
-                            <option key={profile.id} value={profile.id}>
-                              {profile.name}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          value={editingEntry.bodyPart}
-                          onChange={(event) =>
-                            updateEditingEntry("bodyPart", event.target.value)
-                          }
-                          className={compactSelectClassName}
-                        >
-                          {editableBodyParts.map((part) => (
-                            <option key={part}>{part}</option>
-                          ))}
-                        </select>
-                        {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
-                          <input value="Rest day" readOnly className={compactInputClassName} />
-                        ) : (
-                          <select
-                            value={editingEntry.exercise}
-                            onChange={(event) =>
-                              updateEditingEntry("exercise", event.target.value)
-                            }
-                            className={compactSelectClassName}
-                          >
-                            {exerciseCatalog[
-                              editingEntry.bodyPart as keyof typeof exerciseCatalog
-                            ].map((catalogExercise) => (
-                              <option key={catalogExercise}>{catalogExercise}</option>
-                            ))}
-                          </select>
-                        )}
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={editingEntry.weight}
-                          onChange={(event) =>
-                            updateEditingEntry("weight", event.target.value)
-                          }
-                          className={compactInputClassName}
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          value={editingEntry.reps}
-                          onChange={(event) =>
-                            updateEditingEntry("reps", event.target.value)
-                          }
-                          className={compactInputClassName}
-                        />
-                        <input
-                          value={editingEntry.note}
-                          onChange={(event) =>
-                            updateEditingEntry("note", event.target.value)
-                          }
-                          className={compactInputClassName}
-                          placeholder="Note"
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void saveEditingEntry()}
-                            className="h-8 flex-1 rounded-md bg-white px-2 text-xs font-semibold text-black transition hover:bg-zinc-200"
-                          >
-                            Save
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingEntry(null)}
-                            className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-zinc-500">{entry.date}</span>
-                        <span className="truncate rounded-md border border-zinc-800 px-2 py-1 text-xs font-semibold text-zinc-300">
-                          {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
-                        </span>
-                        <span className="truncate text-zinc-500">{entry.bodyPart}</span>
-                        <span className="font-medium text-white">{entry.exercise}</span>
-                        <span>{entry.weight || "-"}</span>
-                        <span>{entry.reps || "-"}</span>
-                        <span className="text-zinc-500">{entry.note || "-"}</span>
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditingEntry(entry)}
-                            className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void deleteEntry(entry)}
-                            className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-red-500 hover:text-red-400"
-                          >
-                            Del
-                          </button>
-                        </div>
-                      </>
-                    )}
+            {/* History Components (Logs table on desktop, cards on mobile) */}
+            <div className={`space-y-4 lg:block ${mobileTab === "history" ? "block" : "hidden"}`}>
+              <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="text-base font-semibold text-white">
+                  {activeProfile.name} log
+                </h2>
+                <select
+                  value={selectedExercise}
+                  onChange={(event) => setSelectedExercise(event.target.value)}
+                  className={`${selectClassName} bg-black/50 border-zinc-800/80 focus:border-zinc-500`}
+                >
+                  <option>All</option>
+                  {exercises.map((name) => (
+                    <option key={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Mobile Logs View (Card layouts) */}
+              <div className="block md:hidden space-y-3">
+                {filteredEntries.length === 0 ? (
+                  <div className="text-center py-8 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/5">
+                    <p className="text-sm text-zinc-500">No entries logged yet.</p>
                   </div>
-                ))}
+                ) : (
+                  filteredEntries.map((entry) => (
+                    <div key={entry.id}>
+                      {editingEntry?.id === entry.id ? (
+                        <article className="rounded-xl border border-white/80 bg-zinc-950 p-4 shadow-lg space-y-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            <FieldLabel label="Date">
+                              <input
+                                type="date"
+                                value={editingEntry.date}
+                                onChange={(event) =>
+                                  updateEditingEntry("date", event.target.value)
+                                }
+                                className={compactInputClassName}
+                              />
+                            </FieldLabel>
+                            <FieldLabel label="Person">
+                              <select
+                                value={editingEntry.profileId}
+                                onChange={(event) =>
+                                  updateEditingEntry("profileId", event.target.value)
+                                }
+                                className={compactSelectClassName}
+                              >
+                                {profiles.map((profile) => (
+                                  <option key={profile.id} value={profile.id}>
+                                    {profile.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </FieldLabel>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <FieldLabel label="Body part">
+                              <select
+                                value={editingEntry.bodyPart}
+                                onChange={(event) =>
+                                  updateEditingEntry("bodyPart", event.target.value)
+                                }
+                                className={compactSelectClassName}
+                              >
+                                {editableBodyParts.map((part) => (
+                                  <option key={part}>{part}</option>
+                                ))}
+                              </select>
+                            </FieldLabel>
+                            <FieldLabel label="Exercise">
+                              {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
+                                <input value="Rest day" readOnly className={compactInputClassName} />
+                              ) : (
+                                <select
+                                  value={editingEntry.exercise}
+                                  onChange={(event) =>
+                                    updateEditingEntry("exercise", event.target.value)
+                                  }
+                                  className={compactSelectClassName}
+                                >
+                                  {exerciseCatalog[
+                                    editingEntry.bodyPart as keyof typeof exerciseCatalog
+                                  ].map((catalogExercise) => (
+                                    <option key={catalogExercise}>{catalogExercise}</option>
+                                  ))}
+                                </select>
+                              )}
+                            </FieldLabel>
+                          </div>
+
+                          {editingEntry.kind !== "rest" && editingEntry.bodyPart !== "Rest" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <FieldLabel label="Weight">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.5"
+                                  value={editingEntry.weight}
+                                  onChange={(event) =>
+                                    updateEditingEntry("weight", event.target.value)
+                                  }
+                                  className={compactInputClassName}
+                                />
+                              </FieldLabel>
+                              <FieldLabel label="Reps">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={editingEntry.reps}
+                                  onChange={(event) =>
+                                    updateEditingEntry("reps", event.target.value)
+                                  }
+                                  className={compactInputClassName}
+                                />
+                              </FieldLabel>
+                            </div>
+                          )}
+
+                          <FieldLabel label="Note">
+                            <input
+                              value={editingEntry.note}
+                              onChange={(event) =>
+                                updateEditingEntry("note", event.target.value)
+                              }
+                              className={compactInputClassName}
+                              placeholder="Note"
+                            />
+                          </FieldLabel>
+
+                          <div className="flex gap-2 pt-2 border-t border-zinc-900">
+                            <button
+                              type="button"
+                              onClick={() => void saveEditingEntry()}
+                              className="h-9 flex-1 rounded-lg bg-white px-3 text-xs font-semibold text-black transition hover:bg-zinc-200"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingEntry(null)}
+                              className="h-9 flex-1 rounded-lg border border-zinc-800 px-3 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </article>
+                      ) : (
+                        <article className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-900/10 backdrop-blur-md p-4 shadow-sm hover:border-zinc-700/50 transition">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs text-zinc-500 font-medium">{entry.date}</p>
+                              <h4 className="mt-1 font-semibold text-white text-base leading-snug truncate-2-lines">{entry.exercise}</h4>
+                            </div>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase border ${
+                              entry.kind === "rest"
+                                ? "bg-amber-950/20 text-amber-400 border-amber-800/30"
+                                : "bg-violet-950/20 text-violet-400 border-violet-800/30"
+                            }`}>
+                              {entry.bodyPart}
+                            </span>
+                          </div>
+
+                          <div className="mt-3.5 flex items-center justify-between gap-4 border-t border-zinc-850 pt-3">
+                            <div className="flex items-center gap-5">
+                              <div>
+                                <p className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">Logged By</p>
+                                <span className="mt-0.5 inline-block text-xs font-semibold text-zinc-300">
+                                  👤 {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
+                                </span>
+                              </div>
+                              {entry.kind !== "rest" && (
+                                <>
+                                  <div>
+                                    <p className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">Weight</p>
+                                    <p className="mt-0.5 text-xs font-bold text-white">{entry.weight ? `${entry.weight} kg` : "-"}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">Reps</p>
+                                    <p className="mt-0.5 text-xs font-bold text-white">{entry.reps || "-"}</p>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => startEditingEntry(entry)}
+                                className="h-8 rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-xs font-semibold text-zinc-300 transition hover:border-zinc-600 hover:text-white"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void deleteEntry(entry)}
+                                className="h-8 rounded-lg border border-zinc-800 bg-zinc-900/30 px-2.5 text-xs font-semibold text-zinc-500 transition hover:border-red-900/60 hover:text-red-400"
+                              >
+                                Del
+                              </button>
+                            </div>
+                          </div>
+
+                          {entry.note && (
+                            <div className="mt-3 rounded-lg bg-zinc-950/40 border border-zinc-850 px-3 py-2 text-xs text-zinc-400 font-medium">
+                              <span className="font-semibold text-zinc-500">Note: </span>
+                              {entry.note}
+                            </div>
+                          )}
+                        </article>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Desktop Logs View (Table layout, visible on medium+ screens) */}
+              <div className="hidden md:block overflow-hidden rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md">
+                <div className="overflow-x-auto">
+                  <div className="min-w-[900px]">
+                    <div className="grid grid-cols-[92px_106px_96px_1fr_74px_58px_1fr_118px] gap-3 border-b border-zinc-850 bg-black/60 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      <span>Date</span>
+                      <span>Person</span>
+                      <span>Part</span>
+                      <span>Exercise</span>
+                      <span>Weight</span>
+                      <span>Reps</span>
+                      <span>Note</span>
+                      <span></span>
+                    </div>
+                    {filteredEntries.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="grid grid-cols-[92px_106px_96px_1fr_74px_58px_1fr_118px] gap-3 border-b border-zinc-850 px-4 py-3 text-sm text-zinc-200 last:border-b-0"
+                      >
+                        {editingEntry?.id === entry.id ? (
+                          <>
+                            <input
+                              type="date"
+                              value={editingEntry.date}
+                              onChange={(event) =>
+                                updateEditingEntry("date", event.target.value)
+                              }
+                              className={compactInputClassName}
+                            />
+                            <select
+                              value={editingEntry.profileId}
+                              onChange={(event) =>
+                                updateEditingEntry("profileId", event.target.value)
+                              }
+                              className={compactSelectClassName}
+                            >
+                              {profiles.map((profile) => (
+                                <option key={profile.id} value={profile.id}>
+                                  {profile.name}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={editingEntry.bodyPart}
+                              onChange={(event) =>
+                                updateEditingEntry("bodyPart", event.target.value)
+                              }
+                              className={compactSelectClassName}
+                            >
+                              {editableBodyParts.map((part) => (
+                                <option key={part}>{part}</option>
+                              ))}
+                            </select>
+                            {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
+                              <input value="Rest day" readOnly className={compactInputClassName} />
+                            ) : (
+                              <select
+                                value={editingEntry.exercise}
+                                onChange={(event) =>
+                                  updateEditingEntry("exercise", event.target.value)
+                                }
+                                className={compactSelectClassName}
+                              >
+                                {exerciseCatalog[
+                                  editingEntry.bodyPart as keyof typeof exerciseCatalog
+                                ].map((catalogExercise) => (
+                                  <option key={catalogExercise}>{catalogExercise}</option>
+                                ))}
+                              </select>
+                            )}
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={editingEntry.weight}
+                              onChange={(event) =>
+                                updateEditingEntry("weight", event.target.value)
+                              }
+                              className={compactInputClassName}
+                            />
+                            <input
+                              type="number"
+                              min="0"
+                              value={editingEntry.reps}
+                              onChange={(event) =>
+                                updateEditingEntry("reps", event.target.value)
+                              }
+                              className={compactInputClassName}
+                            />
+                            <input
+                              value={editingEntry.note}
+                              onChange={(event) =>
+                                updateEditingEntry("note", event.target.value)
+                              }
+                              className={compactInputClassName}
+                              placeholder="Note"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void saveEditingEntry()}
+                                className="h-8 flex-1 rounded-md bg-white px-2 text-xs font-semibold text-black transition hover:bg-zinc-200"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingEntry(null)}
+                                className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-zinc-500">{entry.date}</span>
+                            <span className="truncate rounded-md border border-zinc-800 px-2 py-1 text-xs font-semibold text-zinc-300">
+                              {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
+                            </span>
+                            <span className="truncate text-zinc-500">{entry.bodyPart}</span>
+                            <span className="font-semibold text-white">{entry.exercise}</span>
+                            <span>{entry.weight || "-"}</span>
+                            <span>{entry.reps || "-"}</span>
+                            <span className="text-zinc-500">{entry.note || "-"}</span>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => startEditingEntry(entry)}
+                                className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void deleteEntry(entry)}
+                                className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-red-500 hover:text-red-400"
+                              >
+                                Del
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </section>

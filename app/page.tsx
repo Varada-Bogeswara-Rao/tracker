@@ -1,13 +1,15 @@
 "use client";
 
-import { FormEvent, useMemo, useState, useSyncExternalStore } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
 
 type Profile = {
   id: string;
   name: string;
 };
 
-type WorkoutSet = {
+type WorkoutEntry = {
+  kind: "workout";
   id: string;
   profileId: string;
   bodyPart: string;
@@ -16,11 +18,34 @@ type WorkoutSet = {
   weight: number;
   reps: number;
   note: string;
+  createdAt: string;
 };
 
-type AppState = {
-  profiles: Profile[];
-  sets: WorkoutSet[];
+type RestEntry = {
+  kind: "rest";
+  id: string;
+  profileId: string;
+  bodyPart: "Rest";
+  date: string;
+  exercise: "Rest day";
+  weight: 0;
+  reps: 0;
+  note: string;
+  createdAt: string;
+};
+
+type Entry = WorkoutEntry | RestEntry;
+
+type EditingEntryDraft = {
+  id: string;
+  kind: Entry["kind"];
+  profileId: string;
+  bodyPart: string;
+  date: string;
+  exercise: string;
+  weight: string;
+  reps: string;
+  note: string;
 };
 
 type ExerciseProgress = {
@@ -31,22 +56,45 @@ type ExerciseProgress = {
   oneRepMax: number;
 };
 
-type EditingSetDraft = {
-  id: string;
-  profileId: string;
-  bodyPart: string;
-  date: string;
-  exercise: string;
-  weight: string;
-  reps: string;
-  note: string;
+type LegacyState = {
+  profiles: Profile[];
+  sets: Array<{
+    id: string;
+    profileId: string;
+    bodyPart: string;
+    date: string;
+    exercise: string;
+    weight: number;
+    reps: number;
+    note: string;
+  }>;
 };
 
-const STORAGE_KEY = "gym-workout-tracker-v2";
-const LEGACY_STORAGE_KEY = "gym-workout-tracker-v1";
-const STATE_CHANGED_EVENT = "gym-workout-tracker-change";
-const DEFAULT_PROFILE_ID = "profile-you";
-const FRIEND_PROFILE_ID = "profile-friend";
+type ProfileRow = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+type WorkoutRow = {
+  id: string;
+  profile_id: string;
+  body_part: string;
+  exercise: string;
+  weight: number;
+  reps: number;
+  note: string;
+  workout_date: string;
+  created_at: string;
+};
+
+type RestRow = {
+  id: string;
+  profile_id: string;
+  rest_date: string;
+  note: string;
+  created_at: string;
+};
 
 const exerciseCatalog = {
   Legs: [
@@ -87,19 +135,24 @@ const exerciseCatalog = {
 const bodyParts = Object.keys(exerciseCatalog);
 const editableBodyParts = [...bodyParts, "Rest"];
 
+const STORAGE_KEY = "gym-workout-tracker-v2";
+const LEGACY_STORAGE_KEY = "gym-workout-tracker-v1";
+const DEFAULT_PROFILE_ID = "profile-you";
+const FRIEND_PROFILE_ID = "profile-friend";
+
 const starterProfiles: Profile[] = [
   { id: DEFAULT_PROFILE_ID, name: "You" },
   { id: FRIEND_PROFILE_ID, name: "Friend" },
 ];
 
-const starterSets: WorkoutSet[] = [
-  makeSet(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 20, 12, "1st set", undefined, "starter-1"),
-  makeSet(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 25, 7, "2nd set", undefined, "starter-2"),
-  makeSet(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 25, 8, "3rd set", undefined, "starter-3"),
-  makeSet(DEFAULT_PROFILE_ID, "Legs", "Leg press", 20, 12, "1st set", undefined, "starter-4"),
-  makeSet(DEFAULT_PROFILE_ID, "Legs", "Leg press", 40, 12, "2nd set", undefined, "starter-5"),
-  makeSet(DEFAULT_PROFILE_ID, "Legs", "Leg press", 50, 11, "3rd set", undefined, "starter-6"),
-  makeSet(
+const starterWorkoutEntries: WorkoutEntry[] = [
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 20, 12, "1st set", undefined, "starter-1"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 25, 7, "2nd set", undefined, "starter-2"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 25, 8, "3rd set", undefined, "starter-3"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg press", 20, 12, "1st set", undefined, "starter-4"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg press", 40, 12, "2nd set", undefined, "starter-5"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg press", 50, 11, "3rd set", undefined, "starter-6"),
+  makeWorkoutEntry(
     DEFAULT_PROFILE_ID,
     "Legs",
     "Lying leg curls",
@@ -109,18 +162,12 @@ const starterSets: WorkoutSet[] = [
     undefined,
     "starter-7",
   ),
-  makeSet(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 30, 13, "1st set", undefined, "starter-8"),
-  makeSet(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 50, 12, "2nd set", undefined, "starter-9"),
-  makeSet(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 60, 10, "3rd set", undefined, "starter-10"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 30, 13, "1st set", undefined, "starter-8"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 50, 12, "2nd set", undefined, "starter-9"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 60, 10, "3rd set", undefined, "starter-10"),
 ];
 
-const starterState: AppState = {
-  profiles: starterProfiles,
-  sets: starterSets,
-};
-const starterStateJson = JSON.stringify(starterState);
-
-function makeSet(
+function makeWorkoutEntry(
   profileId: string,
   bodyPart: string,
   exercise: string,
@@ -129,8 +176,10 @@ function makeSet(
   note = "",
   date = new Date().toISOString().slice(0, 10),
   id = crypto.randomUUID(),
-): WorkoutSet {
+  createdAt = new Date().toISOString(),
+): WorkoutEntry {
   return {
+    kind: "workout",
     id,
     profileId,
     bodyPart,
@@ -139,85 +188,40 @@ function makeSet(
     weight,
     reps,
     note,
+    createdAt,
   };
 }
 
-function makeProfile(name: string): Profile {
+function makeRestEntry(
+  profileId: string,
+  note = "Recovery",
+  date = new Date().toISOString().slice(0, 10),
+  id = crypto.randomUUID(),
+  createdAt = new Date().toISOString(),
+): RestEntry {
   return {
-    id: crypto.randomUUID(),
-    name,
+    kind: "rest",
+    id,
+    profileId,
+    bodyPart: "Rest",
+    date,
+    exercise: "Rest day",
+    weight: 0,
+    reps: 0,
+    note,
+    createdAt,
   };
 }
 
-function subscribeToState(onStoreChange: () => void) {
-  window.addEventListener("storage", onStoreChange);
-  window.addEventListener(STATE_CHANGED_EVENT, onStoreChange);
+function buildSetNote(setNumber: string, note: string) {
+  const cleanNote = note.trim();
+  const setLabel = `Set ${setNumber}`;
 
-  return () => {
-    window.removeEventListener("storage", onStoreChange);
-    window.removeEventListener(STATE_CHANGED_EVENT, onStoreChange);
-  };
+  return cleanNote ? `${setLabel} - ${cleanNote}` : setLabel;
 }
 
-function getStoredStateSnapshot() {
-  const current = window.localStorage.getItem(STORAGE_KEY);
-
-  if (current) {
-    return current;
-  }
-
-  const legacySets = window.localStorage.getItem(LEGACY_STORAGE_KEY);
-
-  if (!legacySets) {
-    return starterStateJson;
-  }
-
-  return JSON.stringify({
-    profiles: starterProfiles,
-    sets: readLegacySets(legacySets),
-  });
-}
-
-function getServerStateSnapshot() {
-  return starterStateJson;
-}
-
-function saveStoredState(nextState: AppState) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
-  window.dispatchEvent(new Event(STATE_CHANGED_EVENT));
-}
-
-function readState(snapshot: string): AppState {
-  try {
-    const parsed = JSON.parse(snapshot) as Partial<AppState>;
-    const profiles = parsed.profiles?.length ? parsed.profiles : starterProfiles;
-    const sets = Array.isArray(parsed.sets) ? parsed.sets : [];
-
-    return {
-      profiles,
-      sets: sets.map((set) => ({
-        ...set,
-        profileId: set.profileId || profiles[0].id,
-        bodyPart: set.bodyPart || getBodyPartForExercise(set.exercise, "Legs"),
-      })),
-    };
-  } catch {
-    return starterState;
-  }
-}
-
-function readLegacySets(snapshot: string): WorkoutSet[] {
-  try {
-    const legacySets = JSON.parse(snapshot) as Omit<WorkoutSet, "profileId">[];
-
-    return legacySets.map((set) => ({
-      ...set,
-      profileId: DEFAULT_PROFILE_ID,
-      bodyPart: getBodyPartForExercise(set.exercise, "Legs"),
-    }));
-  } catch {
-    return starterSets;
-  }
+function isRestEntry(entry: Entry) {
+  return entry.kind === "rest";
 }
 
 function estimateOneRepMax(weight: number, reps: number) {
@@ -228,13 +232,37 @@ function estimateOneRepMax(weight: number, reps: number) {
   return Math.round(weight * (1 + reps / 30));
 }
 
+function normalizeExercise(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function getBodyPartForExercise(exercise: string, fallback = "Legs") {
+  const normalizedExercise = normalizeExercise(exercise);
+  const match = bodyParts.find((bodyPart) =>
+    exerciseCatalog[bodyPart as keyof typeof exerciseCatalog].some(
+      (catalogExercise) =>
+        normalizeExercise(catalogExercise) === normalizedExercise,
+    ),
+  );
+
+  return match || fallback;
+}
+
+function cleanExerciseName(value: string) {
+  return value
+    .replace(/\b\d+(st|nd|rd|th)?\b/gi, "")
+    .replace(/\bset(s)?\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function parseWorkoutNotes(
   text: string,
   fallbackDate: string,
   profileId: string,
   fallbackBodyPart: string,
 ) {
-  const sets: WorkoutSet[] = [];
+  const entries: WorkoutEntry[] = [];
   let currentExercise = "";
 
   text
@@ -252,8 +280,8 @@ function parseWorkoutNotes(
           currentExercise = cleanExerciseName(exerciseBeforeNumbers);
         }
 
-        sets.push(
-          makeSet(
+        entries.push(
+          makeWorkoutEntry(
             profileId,
             getBodyPartForExercise(currentExercise, fallbackBodyPart),
             currentExercise || "Workout set",
@@ -268,8 +296,8 @@ function parseWorkoutNotes(
       }
 
       currentExercise = cleanExerciseName(line);
-      sets.push(
-        makeSet(
+      entries.push(
+        makeWorkoutEntry(
           profileId,
           getBodyPartForExercise(currentExercise, fallbackBodyPart),
           currentExercise,
@@ -281,90 +309,126 @@ function parseWorkoutNotes(
       );
     });
 
-  return sets;
+  return entries;
 }
 
-function getBodyPartForExercise(exercise: string, fallback = "Legs") {
-  const normalizedExercise = normalizeExercise(exercise);
-  const match = bodyParts.find((bodyPart) =>
-    exerciseCatalog[bodyPart as keyof typeof exerciseCatalog].some(
-      (catalogExercise) =>
-        normalizeExercise(catalogExercise) === normalizedExercise,
-    ),
-  );
+function parseLegacySnapshot(raw: string): LegacyState | null {
+  try {
+    const parsed = JSON.parse(raw) as Partial<LegacyState>;
+    if (!parsed.profiles || !parsed.sets) {
+      return null;
+    }
 
-  return match || fallback;
+    return {
+      profiles: parsed.profiles,
+      sets: parsed.sets,
+    };
+  } catch {
+    return null;
+  }
 }
 
-function normalizeExercise(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+function legacyToEntries(legacy: LegacyState) {
+  const workoutEntries: WorkoutEntry[] = [];
+  const restEntries: RestEntry[] = [];
+
+  legacy.sets.forEach((set) => {
+    if (set.bodyPart === "Rest" || set.exercise === "Rest day") {
+      restEntries.push(
+        makeRestEntry(
+          set.profileId,
+          set.note || "Recovery",
+          set.date,
+          set.id,
+        ),
+      );
+      return;
+    }
+
+    workoutEntries.push(
+      makeWorkoutEntry(
+        set.profileId,
+        set.bodyPart || getBodyPartForExercise(set.exercise, "Legs"),
+        set.exercise,
+        set.weight,
+        set.reps,
+        set.note,
+        set.date,
+        set.id,
+      ),
+    );
+  });
+
+  return { workoutEntries, restEntries };
 }
 
-function cleanExerciseName(value: string) {
-  return value
-    .replace(/\b\d+(st|nd|rd|th)?\b/gi, "")
-    .replace(/\bset(s)?\b/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
+function sortEntries(entries: Entry[]) {
+  return [...entries].sort((a, b) => {
+    const dateSort = b.date.localeCompare(a.date);
+    if (dateSort) {
+      return dateSort;
+    }
+
+    if (a.kind !== b.kind) {
+      return a.kind === "workout" ? -1 : 1;
+    }
+
+    return b.createdAt.localeCompare(a.createdAt);
+  });
 }
 
-function getExerciseProgress(sets: WorkoutSet[]): ExerciseProgress[] {
-  const trainingSets = sets.filter((set) => !isRestDay(set));
-  const exercises = Array.from(
-    new Set(trainingSets.map((set) => set.exercise)),
-  ).sort();
+function profileVolume(entries: WorkoutEntry[]) {
+  return entries.reduce((total, entry) => total + entry.weight * entry.reps, 0);
+}
+
+function getExerciseProgress(entries: WorkoutEntry[]): ExerciseProgress[] {
+  const exercises = Array.from(new Set(entries.map((entry) => entry.exercise))).sort();
 
   return exercises
     .map((name) => {
-      const exerciseSets = trainingSets.filter((set) => set.exercise === name);
-      const bestSet = exerciseSets.reduce((best, current) => {
+      const exerciseEntries = entries.filter((entry) => entry.exercise === name);
+      const bestEntry = exerciseEntries.reduce((best, current) => {
         return current.weight * current.reps > best.weight * best.reps
           ? current
           : best;
-      }, exerciseSets[0]);
+      }, exerciseEntries[0]);
 
       return {
         name,
-        totalSets: exerciseSets.length,
-        bestVolume: bestSet.weight * bestSet.reps,
+        totalSets: exerciseEntries.length,
+        bestVolume: bestEntry.weight * bestEntry.reps,
         bestLabel:
-          bestSet.weight && bestSet.reps
-            ? `${bestSet.weight} x ${bestSet.reps}`
+          bestEntry.weight && bestEntry.reps
+            ? `${bestEntry.weight} x ${bestEntry.reps}`
             : "Needs details",
-        oneRepMax: estimateOneRepMax(bestSet.weight, bestSet.reps),
+        oneRepMax: estimateOneRepMax(bestEntry.weight, bestEntry.reps),
       };
     })
     .sort((a, b) => b.bestVolume - a.bestVolume);
 }
 
-function profileVolume(sets: WorkoutSet[]) {
-  return sets.reduce((total, set) => total + set.weight * set.reps, 0);
-}
-
-function isRestDay(set: WorkoutSet) {
-  return set.bodyPart === "Rest" || set.exercise === "Rest day";
-}
-
-function getSetOrder(set: WorkoutSet, index: number) {
-  const match = set.note.match(/\b(\d+)\s*(st|nd|rd|th)?\b/i);
-
+function getSetOrder(entry: WorkoutEntry, index: number) {
+  const match = entry.note.match(/\b(\d+)\s*(st|nd|rd|th)?\b/i);
   return match ? Number(match[1]) : index + 1;
 }
 
-function buildSetNote(setNumber: string, note: string) {
-  const cleanNote = note.trim();
-  const setLabel = `Set ${setNumber}`;
+function readLegacyStateFromWindow() {
+  if (typeof window === "undefined") {
+    return null;
+  }
 
-  return cleanNote ? `${setLabel} - ${cleanNote}` : setLabel;
+  const raw =
+    window.localStorage.getItem(STORAGE_KEY) ||
+    window.localStorage.getItem(LEGACY_STORAGE_KEY);
+  return raw ? parseLegacySnapshot(raw) : null;
 }
 
 export default function Home() {
-  const stateSnapshot = useSyncExternalStore(
-    subscribeToState,
-    getStoredStateSnapshot,
-    getServerStateSnapshot,
-  );
-  const state = useMemo(() => readState(stateSnapshot), [stateSnapshot]);
+  const supabase = useMemo(() => createClient(), []);
+  const [profiles, setProfiles] = useState<Profile[]>(starterProfiles);
+  const [entries, setEntries] = useState<Entry[]>(sortEntries(starterWorkoutEntries));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeProfileId, setActiveProfileId] = useState(DEFAULT_PROFILE_ID);
   const [compareProfileId, setCompareProfileId] = useState(FRIEND_PROFILE_ID);
   const [newProfileName, setNewProfileName] = useState("");
@@ -378,93 +442,88 @@ export default function Home() {
   const [restNote, setRestNote] = useState("");
   const [quickNotes, setQuickNotes] = useState("");
   const [selectedExercise, setSelectedExercise] = useState("All");
-  const [editingSet, setEditingSet] = useState<EditingSetDraft | null>(null);
+  const [editingEntry, setEditingEntry] = useState<EditingEntryDraft | null>(null);
 
   const activeProfile =
-    state.profiles.find((profile) => profile.id === activeProfileId) ||
-    state.profiles[0];
+    profiles.find((profile) => profile.id === activeProfileId) || profiles[0];
   const compareProfile =
-    state.profiles.find((profile) => profile.id === compareProfileId) ||
-    state.profiles.find((profile) => profile.id !== activeProfile.id) ||
+    profiles.find((profile) => profile.id === compareProfileId) ||
+    profiles.find((profile) => profile.id !== activeProfile.id) ||
     activeProfile;
-  const activeSets = useMemo(
-    () => state.sets.filter((set) => set.profileId === activeProfile.id),
-    [activeProfile.id, state.sets],
-  );
-  const activeTrainingSets = useMemo(
-    () => activeSets.filter((set) => !isRestDay(set)),
-    [activeSets],
-  );
-  const compareSets = useMemo(
-    () => state.sets.filter((set) => set.profileId === compareProfile.id),
-    [compareProfile.id, state.sets],
-  );
-  const compareTrainingSets = useMemo(
-    () => compareSets.filter((set) => !isRestDay(set)),
-    [compareSets],
-  );
-  const profileNameById = useMemo(() => {
-    return new Map(state.profiles.map((profile) => [profile.id, profile.name]));
-  }, [state.profiles]);
-  const catalogExercises =
-    exerciseCatalog[bodyPart as keyof typeof exerciseCatalog];
 
+  const activeEntries = useMemo(
+    () => entries.filter((entry) => entry.profileId === activeProfile.id),
+    [activeProfile.id, entries],
+  );
+  const activeWorkoutEntries = useMemo(
+    () => activeEntries.filter((entry) => !isRestEntry(entry)),
+    [activeEntries],
+  );
+  const compareEntries = useMemo(
+    () => entries.filter((entry) => entry.profileId === compareProfile.id),
+    [compareProfile.id, entries],
+  );
+  const compareWorkoutEntries = useMemo(
+    () => compareEntries.filter((entry) => !isRestEntry(entry)),
+    [compareEntries],
+  );
+  const catalogExercises = exerciseCatalog[bodyPart as keyof typeof exerciseCatalog];
   const exercises = useMemo(
-    () =>
-      Array.from(
-        new Set(activeTrainingSets.map((set) => set.exercise)),
-      ).sort(),
-    [activeTrainingSets],
+    () => Array.from(new Set(activeWorkoutEntries.map((entry) => entry.exercise))).sort(),
+    [activeWorkoutEntries],
   );
 
-  const filteredSets = useMemo(() => {
-    const visible =
-      selectedExercise === "All"
-        ? activeSets
-        : activeSets.filter((set) => set.exercise === selectedExercise);
+  const filteredEntries = useMemo(() => {
+      const visible =
+        selectedExercise === "All"
+          ? activeEntries
+          : activeEntries.filter(
+              (entry) => !isRestEntry(entry) && entry.exercise === selectedExercise,
+            );
 
-    return [...visible].sort((a, b) => b.date.localeCompare(a.date));
-  }, [activeSets, selectedExercise]);
+    return sortEntries(visible);
+  }, [activeEntries, selectedExercise]);
 
   const progress = useMemo(
-    () => getExerciseProgress(activeTrainingSets),
-    [activeTrainingSets],
+    () => getExerciseProgress(activeWorkoutEntries),
+    [activeWorkoutEntries],
   );
+
   const setBreakdowns = useMemo(() => {
     return progress.map((item) => {
-      const exerciseSets = activeTrainingSets
-        .filter((set) => set.exercise === item.name)
+      const exerciseEntries = activeWorkoutEntries
+        .filter((entry) => entry.exercise === item.name)
         .sort((a, b) => {
           const dateSort = b.date.localeCompare(a.date);
-
           return dateSort || getSetOrder(a, 0) - getSetOrder(b, 0);
         });
 
       return {
         name: item.name,
-        bodyPart: exerciseSets[0]?.bodyPart || getBodyPartForExercise(item.name),
-        sets: exerciseSets,
+        bodyPart: exerciseEntries[0]?.bodyPart || getBodyPartForExercise(item.name),
+        sets: exerciseEntries,
       };
     });
-  }, [activeTrainingSets, progress]);
-  const previousExerciseSets = useMemo(() => {
-    const matchingSets = activeTrainingSets
-      .filter((set) => set.exercise === exercise)
-      .sort((a, b) => b.date.localeCompare(a.date));
-    const lastDate = matchingSets[0]?.date;
+  }, [activeWorkoutEntries, progress]);
+
+  const previousExerciseEntries = useMemo(() => {
+    const matchingEntries = activeWorkoutEntries
+      .filter((entry) => entry.exercise === exercise)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    const lastDate = matchingEntries[0]?.date;
 
     if (!lastDate) {
       return [];
     }
 
-    return matchingSets
-      .filter((set) => set.date === lastDate)
+    return matchingEntries
+      .filter((entry) => entry.date === lastDate)
       .sort((a, b) => getSetOrder(a, 0) - getSetOrder(b, 0));
-  }, [activeTrainingSets, exercise]);
+  }, [activeWorkoutEntries, exercise]);
 
   const comparisonRows = useMemo(() => {
-    const leftProgress = getExerciseProgress(activeTrainingSets);
-    const rightProgress = getExerciseProgress(compareTrainingSets);
+    const leftProgress = getExerciseProgress(activeWorkoutEntries);
+    const rightProgress = getExerciseProgress(compareWorkoutEntries);
     const exerciseNames = Array.from(
       new Set([...leftProgress, ...rightProgress].map((item) => item.name)),
     ).sort();
@@ -479,8 +538,6 @@ export default function Home() {
         name,
         leftBest: left?.bestLabel || "-",
         rightBest: right?.bestLabel || "-",
-        leftMax,
-        rightMax,
         leader:
           leftMax === rightMax
             ? "Tie"
@@ -489,152 +546,338 @@ export default function Home() {
               : compareProfile.name,
       };
     });
-  }, [
-    activeProfile.name,
-    activeTrainingSets,
-    compareProfile.name,
-    compareTrainingSets,
-  ]);
+  }, [activeProfile.name, activeWorkoutEntries, compareProfile.name, compareWorkoutEntries]);
 
-  function addProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = newProfileName.trim();
+  const fetchData = useCallback(async (): Promise<{ profiles: Profile[]; entries: Entry[] }> => {
+    const [profilesResult, workoutsResult, restResult] = await Promise.all([
+      supabase.from("profiles").select("id, name, created_at").order("created_at"),
+      supabase
+        .from("workout_sets")
+        .select("id, profile_id, body_part, exercise, weight, reps, note, workout_date, created_at")
+        .order("workout_date", { ascending: false })
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("rest_days")
+        .select("id, profile_id, rest_date, note, created_at")
+        .order("rest_date", { ascending: false })
+        .order("created_at", { ascending: false }),
+    ]);
 
-    if (!name) {
-      return;
+    if (profilesResult.error) {
+      throw profilesResult.error;
+    }
+    if (workoutsResult.error) {
+      throw workoutsResult.error;
+    }
+    if (restResult.error) {
+      throw restResult.error;
     }
 
-    const profile = makeProfile(name);
-    saveStoredState({
-      ...state,
-      profiles: [...state.profiles, profile],
-    });
-    setActiveProfileId(profile.id);
-    setNewProfileName("");
+    let nextProfiles = (profilesResult.data || []).map(mapProfileRow);
+    let nextEntries = [
+      ...(workoutsResult.data || []).map(mapWorkoutRow),
+      ...(restResult.data || []).map(mapRestRow),
+    ];
+
+    if (!nextProfiles.length && !nextEntries.length) {
+      const legacy = readLegacyStateFromWindow();
+      const sourceProfiles = legacy?.profiles || starterProfiles;
+      const sourceEntries = legacy
+        ? legacyToEntries(legacy)
+        : { workoutEntries: starterWorkoutEntries, restEntries: [] };
+
+      const profilesToInsert = sourceProfiles.map((profile) => ({
+        id: profile.id,
+        name: profile.name,
+      }));
+
+      const workoutRowsToInsert = sourceEntries.workoutEntries.map((entry) => ({
+        id: entry.id,
+        profile_id: entry.profileId,
+        body_part: entry.bodyPart,
+        exercise: entry.exercise,
+        weight: entry.weight,
+        reps: entry.reps,
+        note: entry.note,
+        workout_date: entry.date,
+      }));
+
+      const restRowsToInsert = sourceEntries.restEntries.map((entry) => ({
+        id: entry.id,
+        profile_id: entry.profileId,
+        rest_date: entry.date,
+        note: entry.note,
+      }));
+
+      const insertProfiles = await supabase.from("profiles").upsert(profilesToInsert, {
+        onConflict: "id",
+      });
+      if (insertProfiles.error) {
+        throw insertProfiles.error;
+      }
+
+      if (workoutRowsToInsert.length) {
+        const insertWorkouts = await supabase.from("workout_sets").upsert(workoutRowsToInsert, {
+          onConflict: "id",
+        });
+        if (insertWorkouts.error) {
+          throw insertWorkouts.error;
+        }
+      }
+
+      if (restRowsToInsert.length) {
+        const insertRest = await supabase.from("rest_days").upsert(restRowsToInsert, {
+          onConflict: "id",
+        });
+        if (insertRest.error) {
+          throw insertRest.error;
+        }
+      }
+
+      nextProfiles = sourceProfiles;
+      nextEntries = sortEntries([...sourceEntries.workoutEntries, ...sourceEntries.restEntries]);
+    }
+
+    return {
+      profiles: nextProfiles.length ? nextProfiles : starterProfiles,
+      entries: sortEntries(nextEntries.length ? nextEntries : starterWorkoutEntries),
+    };
+  }, [supabase]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const next = await fetchData();
+        if (cancelled) {
+          return;
+        }
+        setProfiles(next.profiles);
+        setEntries(next.entries);
+      } catch (loadError) {
+        console.error(loadError);
+        if (!cancelled) {
+          setError(
+            loadError instanceof Error ? loadError.message : "Failed to load data",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchData]);
+
+  function refreshAfterMutation() {
+    void (async () => {
+      try {
+        const next = await fetchData();
+        setProfiles(next.profiles);
+        setEntries(next.entries);
+      } catch (loadError) {
+        console.error(loadError);
+        setError(loadError instanceof Error ? loadError.message : "Failed to load data");
+      }
+    })();
   }
 
   function selectBodyPart(nextBodyPart: string) {
-    const nextExercises =
-      exerciseCatalog[nextBodyPart as keyof typeof exerciseCatalog];
-
+    const nextExercises = exerciseCatalog[nextBodyPart as keyof typeof exerciseCatalog];
     setBodyPart(nextBodyPart);
     setExercise(nextExercises[0]);
     setSelectedExercise("All");
   }
 
-  function removeProfile(profileId: string) {
-    if (state.profiles.length <= 1) {
+  async function addProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newProfileName.trim();
+    if (!name) {
       return;
     }
 
-    const nextProfiles = state.profiles.filter(
-      (profile) => profile.id !== profileId,
-    );
-    const nextActiveProfile =
-      activeProfile.id === profileId
-        ? nextProfiles[0]
-        : activeProfile;
-    const nextCompareProfile =
-      compareProfile.id === profileId || compareProfile.id === nextActiveProfile.id
-        ? nextProfiles.find((profile) => profile.id !== nextActiveProfile.id) ||
-          nextActiveProfile
-        : compareProfile;
-
-    saveStoredState({
-      profiles: nextProfiles,
-      sets: state.sets.filter((set) => set.profileId !== profileId),
+    const profile: Profile = { id: crypto.randomUUID(), name };
+    const { error: insertError } = await supabase.from("profiles").insert({
+      id: profile.id,
+      name: profile.name,
     });
 
-    setActiveProfileId(nextActiveProfile.id);
-    setCompareProfileId(nextCompareProfile.id);
-    setSelectedExercise("All");
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+
+    setActiveProfileId(profile.id);
+    setNewProfileName("");
+    refreshAfterMutation();
   }
 
-  function addSet(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function removeProfile(profileId: string) {
+    if (profiles.length <= 1) {
+      return;
+    }
 
+    const { error: deleteRestError } = await supabase
+      .from("rest_days")
+      .delete()
+      .eq("profile_id", profileId);
+    if (deleteRestError) {
+      setError(deleteRestError.message);
+      return;
+    }
+
+    const { error: deleteWorkoutError } = await supabase
+      .from("workout_sets")
+      .delete()
+      .eq("profile_id", profileId);
+    if (deleteWorkoutError) {
+      setError(deleteWorkoutError.message);
+      return;
+    }
+
+    const { error: deleteProfileError } = await supabase
+      .from("profiles")
+      .delete()
+      .eq("id", profileId);
+    if (deleteProfileError) {
+      setError(deleteProfileError.message);
+      return;
+    }
+
+    if (activeProfile.id === profileId) {
+      setActiveProfileId(profiles.find((profile) => profile.id !== profileId)?.id || DEFAULT_PROFILE_ID);
+    }
+    if (compareProfile.id === profileId) {
+      setCompareProfileId(profiles.find((profile) => profile.id !== profileId)?.id || DEFAULT_PROFILE_ID);
+    }
+
+    setSelectedExercise("All");
+    refreshAfterMutation();
+  }
+
+  async function addWorkout(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     if (!exercise.trim()) {
       return;
     }
 
-    saveStoredState({
-      ...state,
-      sets: [
-        makeSet(
-          activeProfile.id,
-          bodyPart,
-          exercise.trim(),
-          Number(weight),
-          Number(reps),
-          buildSetNote(setNumber, note),
-          date,
-        ),
-        ...state.sets,
-      ],
+    const entry = makeWorkoutEntry(
+      activeProfile.id,
+      bodyPart,
+      exercise.trim(),
+      Number(weight),
+      Number(reps),
+      buildSetNote(setNumber, note),
+      date,
+    );
+
+    const { error: insertError } = await supabase.from("workout_sets").insert({
+      id: entry.id,
+      profile_id: entry.profileId,
+      body_part: entry.bodyPart,
+      exercise: entry.exercise,
+      weight: entry.weight,
+      reps: entry.reps,
+      note: entry.note,
+      workout_date: entry.date,
     });
+
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+
     setNote("");
+    refreshAfterMutation();
   }
 
-  function addRestDay() {
-    saveStoredState({
-      ...state,
-      sets: [
-        makeSet(
-          activeProfile.id,
-          "Rest",
-          "Rest day",
-          0,
-          0,
-          restNote.trim() || "Recovery",
-          date,
-        ),
-        ...state.sets,
-      ],
+  async function addRestDay() {
+    const entry = makeRestEntry(activeProfile.id, restNote.trim() || "Recovery", date);
+
+    const { error: insertError } = await supabase.from("rest_days").insert({
+      id: entry.id,
+      profile_id: entry.profileId,
+      rest_date: entry.date,
+      note: entry.note,
     });
+
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+
     setRestNote("");
+    refreshAfterMutation();
   }
 
-  function importQuickNotes() {
-    const importedSets = parseWorkoutNotes(
+  async function importQuickNotes() {
+    const importedEntries = parseWorkoutNotes(
       quickNotes,
       date,
       activeProfile.id,
       bodyPart,
     );
+    const workoutRows = importedEntries.map((entry) => ({
+      id: entry.id,
+      profile_id: entry.profileId,
+      body_part: entry.bodyPart,
+      exercise: entry.exercise,
+      weight: entry.weight,
+      reps: entry.reps,
+      note: entry.note,
+      workout_date: entry.date,
+    }));
 
-    if (!importedSets.length) {
+    if (!workoutRows.length) {
       return;
     }
 
-    saveStoredState({
-      ...state,
-      sets: [...importedSets, ...state.sets],
-    });
+    const { error: insertError } = await supabase.from("workout_sets").insert(workoutRows);
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+
     setQuickNotes("");
+    refreshAfterMutation();
   }
 
-  function deleteSet(id: string) {
-    saveStoredState({
-      ...state,
-      sets: state.sets.filter((set) => set.id !== id),
+  async function deleteEntry(entry: Entry) {
+    const table = entry.kind === "rest" ? "rest_days" : "workout_sets";
+    const { error } = await supabase.from(table).delete().eq("id", entry.id);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    refreshAfterMutation();
+  }
+
+  function startEditingEntry(entry: Entry) {
+    setEditingEntry({
+      id: entry.id,
+      kind: entry.kind,
+      profileId: entry.profileId,
+      bodyPart: entry.bodyPart,
+      date: entry.date,
+      exercise: entry.exercise,
+      weight: String(entry.weight),
+      reps: String(entry.reps),
+      note: entry.note,
     });
   }
 
-  function startEditingSet(set: WorkoutSet) {
-    setEditingSet({
-      id: set.id,
-      profileId: set.profileId,
-      bodyPart: set.bodyPart,
-      date: set.date,
-      exercise: set.exercise,
-      weight: String(set.weight),
-      reps: String(set.reps),
-      note: set.note,
-    });
-  }
-
-  function updateEditingSet(field: keyof EditingSetDraft, value: string) {
-    setEditingSet((current) => {
+  function updateEditingEntry(field: keyof EditingEntryDraft, value: string) {
+    setEditingEntry((current) => {
       if (!current) {
         return current;
       }
@@ -644,21 +887,19 @@ export default function Home() {
           return {
             ...current,
             bodyPart: "Rest",
+            kind: "rest",
             exercise: "Rest day",
             weight: "0",
             reps: "0",
           };
         }
 
-        const nextExercises =
-          exerciseCatalog[value as keyof typeof exerciseCatalog];
-
+        const nextExercises = exerciseCatalog[value as keyof typeof exerciseCatalog];
         return {
           ...current,
           bodyPart: value,
-          exercise: (nextExercises as readonly string[]).includes(
-            current.exercise,
-          )
+          kind: "workout",
+          exercise: (nextExercises as readonly string[]).includes(current.exercise)
             ? current.exercise
             : nextExercises[0],
         };
@@ -668,29 +909,69 @@ export default function Home() {
     });
   }
 
-  function saveEditingSet() {
-    if (!editingSet?.exercise.trim()) {
+  async function saveEditingEntry() {
+    if (!editingEntry) {
       return;
     }
 
-    saveStoredState({
-      ...state,
-      sets: state.sets.map((set) =>
-        set.id === editingSet.id
-          ? {
-              ...set,
-              profileId: editingSet.profileId,
-              bodyPart: editingSet.bodyPart,
-              date: editingSet.date,
-              exercise: editingSet.exercise.trim(),
-              weight: Number(editingSet.weight),
-              reps: Number(editingSet.reps),
-              note: editingSet.note.trim(),
-            }
-          : set,
-      ),
-    });
-    setEditingSet(null);
+    const nextIsRest = editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest";
+
+    if (nextIsRest) {
+      const payload = {
+        id: editingEntry.id,
+        profile_id: editingEntry.profileId,
+        rest_date: editingEntry.date,
+        note: editingEntry.note.trim() || "Recovery",
+      };
+
+      const deleteWorkout = await supabase.from("workout_sets").delete().eq("id", editingEntry.id);
+      if (deleteWorkout.error) {
+        setError(deleteWorkout.error.message);
+        return;
+      }
+
+      const { error } = await supabase.from("rest_days").upsert(payload, { onConflict: "id" });
+      if (error) {
+        setError(error.message);
+        return;
+      }
+    } else {
+      const payload = {
+        id: editingEntry.id,
+        profile_id: editingEntry.profileId,
+        body_part: editingEntry.bodyPart,
+        exercise: editingEntry.exercise.trim(),
+        weight: Number(editingEntry.weight),
+        reps: Number(editingEntry.reps),
+        note: editingEntry.note.trim(),
+        workout_date: editingEntry.date,
+      };
+
+      const deleteRest = await supabase.from("rest_days").delete().eq("id", editingEntry.id);
+      if (deleteRest.error) {
+        setError(deleteRest.error.message);
+        return;
+      }
+
+      const { error } = await supabase.from("workout_sets").upsert(payload, { onConflict: "id" });
+      if (error) {
+        setError(error.message);
+        return;
+      }
+    }
+
+    setEditingEntry(null);
+    refreshAfterMutation();
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-black text-zinc-100">
+        <section className="mx-auto flex min-h-screen max-w-7xl items-center justify-center px-4">
+          <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">Loading</p>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -701,19 +982,22 @@ export default function Home() {
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
               Training log
             </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-normal text-white sm:text-4xl">
+            <h1 className="mt-2 text-3xl font-semibold text-white sm:text-4xl">
               Workout tracker
             </h1>
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
             <Metric label="Active" value={activeProfile.name} />
-            <Metric label="Sets" value={activeTrainingSets.length.toString()} />
-            <Metric
-              label="Volume"
-              value={profileVolume(activeSets).toLocaleString()}
-            />
+            <Metric label="Sets" value={activeWorkoutEntries.length.toString()} />
+            <Metric label="Volume" value={profileVolume(activeWorkoutEntries).toLocaleString()} />
           </div>
         </header>
+
+        {error ? (
+          <div className="rounded-md border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-200">
+            {error}
+          </div>
+        ) : null}
 
         <section className="grid gap-3 rounded-md border border-zinc-900 bg-zinc-950 p-4 lg:grid-cols-[1fr_320px]">
           <div>
@@ -721,7 +1005,7 @@ export default function Home() {
               Profiles
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {state.profiles.map((profile) => (
+              {profiles.map((profile) => (
                 <div
                   key={profile.id}
                   className={`flex h-10 items-center overflow-hidden rounded-md border transition ${
@@ -739,8 +1023,8 @@ export default function Home() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => removeProfile(profile.id)}
-                    disabled={state.profiles.length <= 1}
+                    onClick={() => void removeProfile(profile.id)}
+                    disabled={profiles.length <= 1}
                     className={`h-full border-l px-3 text-xs font-semibold transition ${
                       profile.id === activeProfile.id
                         ? "border-zinc-300 text-zinc-600 hover:bg-zinc-200"
@@ -753,7 +1037,7 @@ export default function Home() {
               ))}
             </div>
           </div>
-          <form onSubmit={addProfile} className="flex gap-2">
+          <form onSubmit={(event) => void addProfile(event)} className="flex gap-2">
             <input
               value={newProfileName}
               onChange={(event) => setNewProfileName(event.target.value)}
@@ -769,7 +1053,7 @@ export default function Home() {
         <div className="grid gap-5 lg:grid-cols-[390px_1fr]">
           <section className="space-y-4">
             <form
-              onSubmit={addSet}
+              onSubmit={(event) => void addWorkout(event)}
               className="rounded-md border border-zinc-900 bg-zinc-950 p-4"
             >
               <h2 className="text-base font-semibold text-white">
@@ -863,26 +1147,28 @@ export default function Home() {
                     Last time
                   </p>
                   <span className="text-xs text-zinc-600">
-                    {previousExerciseSets[0]?.date || "No history"}
+                    {previousExerciseEntries[0]?.date || "No history"}
                   </span>
                 </div>
                 <div className="mt-3 grid gap-2">
-                  {previousExerciseSets.length ? (
-                    previousExerciseSets.map((set, index) => (
+                  {previousExerciseEntries.length ? (
+                    previousExerciseEntries.map((entry, index) => (
                       <div
-                        key={set.id}
+                        key={entry.id}
                         className="grid grid-cols-[56px_1fr_72px] gap-2 rounded-md border border-zinc-900 px-3 py-2 text-sm"
                       >
-                        <span className="text-zinc-500">Set {index + 1}</span>
+                        <span className="text-zinc-500">
+                          Set {getSetOrder(entry, index)}
+                        </span>
                         <span className="font-semibold text-zinc-100">
-                          {set.weight || "-"} x {set.reps || "-"}
+                          {entry.weight || "-"} x {entry.reps || "-"}
                         </span>
                         <button
                           type="button"
                           onClick={() => {
-                            setWeight(String(set.weight));
-                            setReps(String(set.reps));
-                            setSetNumber(String(getSetOrder(set, index)));
+                            setWeight(String(entry.weight));
+                            setReps(String(entry.reps));
+                            setSetNumber(String(getSetOrder(entry, index)));
                           }}
                           className="text-right text-xs font-semibold text-zinc-400 transition hover:text-white"
                         >
@@ -903,9 +1189,7 @@ export default function Home() {
             </form>
 
             <section className="rounded-md border border-zinc-900 bg-zinc-950 p-4">
-              <h2 className="text-base font-semibold text-white">
-                Rest day
-              </h2>
+              <h2 className="text-base font-semibold text-white">Rest day</h2>
               <div className="mt-4 grid gap-3">
                 <FieldLabel label="Date">
                   <input
@@ -926,7 +1210,7 @@ export default function Home() {
               </div>
               <button
                 type="button"
-                onClick={addRestDay}
+                onClick={() => void addRestDay()}
                 className="mt-4 h-11 w-full rounded-md border border-zinc-700 px-4 text-sm font-semibold text-zinc-100 transition hover:border-zinc-400 hover:bg-zinc-900"
               >
                 Mark rest day
@@ -934,9 +1218,7 @@ export default function Home() {
             </section>
 
             <section className="rounded-md border border-zinc-900 bg-zinc-950 p-4">
-              <h2 className="text-base font-semibold text-white">
-                Paste notes for {activeProfile.name}
-              </h2>
+              <h2 className="text-base font-semibold text-white">Paste notes</h2>
               <textarea
                 value={quickNotes}
                 onChange={(event) => setQuickNotes(event.target.value)}
@@ -948,7 +1230,7 @@ export default function Home() {
               />
               <button
                 type="button"
-                onClick={importQuickNotes}
+                onClick={() => void importQuickNotes()}
                 className="mt-3 h-11 w-full rounded-md border border-zinc-700 px-4 text-sm font-semibold text-zinc-100 transition hover:border-zinc-400 hover:bg-zinc-900"
               >
                 Import notes
@@ -956,9 +1238,7 @@ export default function Home() {
             </section>
 
             <section className="rounded-md border border-zinc-900 bg-zinc-950 p-4">
-              <h2 className="text-base font-semibold text-white">
-                Exercise list
-              </h2>
+              <h2 className="text-base font-semibold text-white">Exercise list</h2>
               <div className="mt-4 grid gap-3">
                 {bodyParts.map((part) => (
                   <div
@@ -969,21 +1249,21 @@ export default function Home() {
                       {part}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {exerciseCatalog[
-                        part as keyof typeof exerciseCatalog
-                      ].map((catalogExercise) => (
-                        <button
-                          key={catalogExercise}
-                          type="button"
-                          onClick={() => {
-                            setBodyPart(part);
-                            setExercise(catalogExercise);
-                          }}
-                          className="rounded-md border border-zinc-800 px-2.5 py-1.5 text-left text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:text-white"
-                        >
-                          {catalogExercise}
-                        </button>
-                      ))}
+                      {exerciseCatalog[part as keyof typeof exerciseCatalog].map(
+                        (catalogExercise) => (
+                          <button
+                            key={catalogExercise}
+                            type="button"
+                            onClick={() => {
+                              setBodyPart(part);
+                              setExercise(catalogExercise);
+                            }}
+                            className="rounded-md border border-zinc-800 px-2.5 py-1.5 text-left text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:text-white"
+                          >
+                            {catalogExercise}
+                          </button>
+                        ),
+                      )}
                     </div>
                   </div>
                 ))}
@@ -994,22 +1274,20 @@ export default function Home() {
           <section className="space-y-4">
             <div className="rounded-md border border-zinc-900 bg-zinc-950 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-base font-semibold text-white">
-                  Compare
-                </h2>
+                <h2 className="text-base font-semibold text-white">Compare</h2>
                 <select
                   value={compareProfile.id}
                   onChange={(event) => setCompareProfileId(event.target.value)}
                   className={selectClassName}
                 >
-                  {state.profiles
+                  {profiles
                     .filter((profile) => profile.id !== activeProfile.id)
                     .map((profile) => (
                       <option key={profile.id} value={profile.id}>
                         {profile.name}
                       </option>
                     ))}
-                  {state.profiles.length === 1 && (
+                  {profiles.length === 1 && (
                     <option value={activeProfile.id}>{activeProfile.name}</option>
                   )}
                 </select>
@@ -1018,18 +1296,18 @@ export default function Home() {
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <CompareMetric
                   label="Volume"
-                  left={profileVolume(activeSets).toLocaleString()}
-                  right={profileVolume(compareSets).toLocaleString()}
+                  left={profileVolume(activeWorkoutEntries).toLocaleString()}
+                  right={profileVolume(compareWorkoutEntries).toLocaleString()}
                 />
                 <CompareMetric
                   label="Sets"
-                  left={activeTrainingSets.length.toString()}
-                  right={compareTrainingSets.length.toString()}
+                  left={activeWorkoutEntries.length.toString()}
+                  right={compareWorkoutEntries.length.toString()}
                 />
                 <CompareMetric
                   label="Exercises"
-                  left={new Set(activeTrainingSets.map((set) => set.exercise)).size.toString()}
-                  right={new Set(compareTrainingSets.map((set) => set.exercise)).size.toString()}
+                  left={new Set(activeWorkoutEntries.map((entry) => entry.exercise)).size.toString()}
+                  right={new Set(compareWorkoutEntries.map((entry) => entry.exercise)).size.toString()}
                 />
               </div>
 
@@ -1076,9 +1354,7 @@ export default function Home() {
                   key={item.name}
                   className="rounded-md border border-zinc-900 bg-zinc-950 p-4"
                 >
-                  <h3 className="text-sm font-semibold text-white">
-                    {item.name}
-                  </h3>
+                  <h3 className="text-sm font-semibold text-white">{item.name}</h3>
                   <dl className="mt-4 grid grid-cols-3 gap-2 text-sm">
                     <Stat label="Best" value={item.bestLabel} />
                     <Stat label="Est. max" value={String(item.oneRepMax)} />
@@ -1089,9 +1365,7 @@ export default function Home() {
             </div>
 
             <div className="rounded-md border border-zinc-900 bg-zinc-950 p-4">
-              <h2 className="text-base font-semibold text-white">
-                Set breakdown
-              </h2>
+              <h2 className="text-base font-semibold text-white">Set breakdown</h2>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 {setBreakdowns.map((item) => (
                   <article
@@ -1099,27 +1373,23 @@ export default function Home() {
                     className="rounded-md border border-zinc-900 bg-black p-3"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-white">
-                        {item.name}
-                      </h3>
+                      <h3 className="text-sm font-semibold text-white">{item.name}</h3>
                       <span className="rounded-md border border-zinc-800 px-2 py-1 text-xs font-semibold text-zinc-400">
                         {item.bodyPart}
                       </span>
                     </div>
                     <div className="mt-3 grid gap-2">
-                      {item.sets.map((set, index) => (
+                      {item.sets.map((entry, index) => (
                         <div
-                          key={set.id}
+                          key={entry.id}
                           className="grid grid-cols-[56px_1fr_72px] gap-2 rounded-md border border-zinc-900 px-3 py-2 text-sm"
                         >
-                          <span className="text-zinc-500">
-                            Set {getSetOrder(set, index)}
-                          </span>
+                          <span className="text-zinc-500">Set {getSetOrder(entry, index)}</span>
                           <span className="font-semibold text-zinc-100">
-                            {set.weight || "-"} x {set.reps || "-"}
+                            {entry.weight || "-"} x {entry.reps || "-"}
                           </span>
                           <span className="text-right text-zinc-500">
-                            {set.date.slice(5)}
+                            {entry.date.slice(5)}
                           </span>
                         </div>
                       ))}
@@ -1132,158 +1402,146 @@ export default function Home() {
             <div className="overflow-x-auto rounded-md border border-zinc-900 bg-zinc-950">
               <div className="min-w-[900px]">
                 <div className="grid grid-cols-[92px_106px_96px_1fr_74px_58px_1fr_118px] gap-3 border-b border-zinc-900 bg-black px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-600">
-                <span className="hidden sm:block">Date</span>
-                <span>Person</span>
-                <span>Part</span>
-                <span>Exercise</span>
-                <span>Weight</span>
-                <span>Reps</span>
-                <span className="hidden sm:block">Note</span>
-                <span></span>
-              </div>
-              {filteredSets.map((set) => (
-                <div
-                  key={set.id}
-                  className="grid grid-cols-[92px_106px_96px_1fr_74px_58px_1fr_118px] gap-3 border-b border-zinc-900 px-4 py-3 text-sm text-zinc-200 last:border-b-0"
-                >
-                  {editingSet?.id === set.id ? (
-                    <>
-                      <input
-                        type="date"
-                        value={editingSet.date}
-                        onChange={(event) =>
-                          updateEditingSet("date", event.target.value)
-                        }
-                        className={compactInputClassName}
-                      />
-                      <select
-                        value={editingSet.profileId}
-                        onChange={(event) =>
-                          updateEditingSet("profileId", event.target.value)
-                        }
-                        className={compactSelectClassName}
-                      >
-                        {state.profiles.map((profile) => (
-                          <option key={profile.id} value={profile.id}>
-                            {profile.name}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={editingSet.bodyPart}
-                        onChange={(event) =>
-                          updateEditingSet("bodyPart", event.target.value)
-                        }
-                        className={compactSelectClassName}
-                      >
-                        {editableBodyParts.map((part) => (
-                          <option key={part}>{part}</option>
-                        ))}
-                      </select>
-                      {editingSet.bodyPart === "Rest" ? (
+                  <span>Date</span>
+                  <span>Person</span>
+                  <span>Part</span>
+                  <span>Exercise</span>
+                  <span>Weight</span>
+                  <span>Reps</span>
+                  <span>Note</span>
+                  <span></span>
+                </div>
+                {filteredEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="grid grid-cols-[92px_106px_96px_1fr_74px_58px_1fr_118px] gap-3 border-b border-zinc-900 px-4 py-3 text-sm text-zinc-200 last:border-b-0"
+                  >
+                    {editingEntry?.id === entry.id ? (
+                      <>
                         <input
-                          value="Rest day"
-                          readOnly
+                          type="date"
+                          value={editingEntry.date}
+                          onChange={(event) =>
+                            updateEditingEntry("date", event.target.value)
+                          }
                           className={compactInputClassName}
                         />
-                      ) : (
                         <select
-                          value={editingSet.exercise}
+                          value={editingEntry.profileId}
                           onChange={(event) =>
-                            updateEditingSet("exercise", event.target.value)
+                            updateEditingEntry("profileId", event.target.value)
                           }
                           className={compactSelectClassName}
                         >
-                          {exerciseCatalog[
-                            editingSet.bodyPart as keyof typeof exerciseCatalog
-                          ].map((catalogExercise) => (
-                            <option key={catalogExercise}>
-                              {catalogExercise}
+                          {profiles.map((profile) => (
+                            <option key={profile.id} value={profile.id}>
+                              {profile.name}
                             </option>
                           ))}
                         </select>
-                      )}
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        value={editingSet.weight}
-                        onChange={(event) =>
-                          updateEditingSet("weight", event.target.value)
-                        }
-                        className={compactInputClassName}
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        value={editingSet.reps}
-                        onChange={(event) =>
-                          updateEditingSet("reps", event.target.value)
-                        }
-                        className={compactInputClassName}
-                      />
-                      <input
-                        value={editingSet.note}
-                        onChange={(event) =>
-                          updateEditingSet("note", event.target.value)
-                        }
-                        className={compactInputClassName}
-                        placeholder="Note"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={saveEditingSet}
-                          className="h-8 flex-1 rounded-md bg-white px-2 text-xs font-semibold text-black transition hover:bg-zinc-200"
+                        <select
+                          value={editingEntry.bodyPart}
+                          onChange={(event) =>
+                            updateEditingEntry("bodyPart", event.target.value)
+                          }
+                          className={compactSelectClassName}
                         >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingSet(null)}
-                          className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-zinc-500">{set.date}</span>
-                      <span className="truncate rounded-md border border-zinc-800 px-2 py-1 text-xs font-semibold text-zinc-300">
-                        {profileNameById.get(set.profileId) || "Unknown"}
-                      </span>
-                      <span className="truncate text-zinc-500">
-                        {set.bodyPart}
-                      </span>
-                      <span className="font-medium text-white">
-                        {set.exercise}
-                      </span>
-                      <span>{set.weight || "-"}</span>
-                      <span>{set.reps || "-"}</span>
-                      <span className="text-zinc-500">
-                        {set.note || "-"}
-                      </span>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => startEditingSet(set)}
-                          className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => deleteSet(set.id)}
-                          className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-red-500 hover:text-red-400"
-                        >
-                          Del
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
+                          {editableBodyParts.map((part) => (
+                            <option key={part}>{part}</option>
+                          ))}
+                        </select>
+                        {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
+                          <input value="Rest day" readOnly className={compactInputClassName} />
+                        ) : (
+                          <select
+                            value={editingEntry.exercise}
+                            onChange={(event) =>
+                              updateEditingEntry("exercise", event.target.value)
+                            }
+                            className={compactSelectClassName}
+                          >
+                            {exerciseCatalog[
+                              editingEntry.bodyPart as keyof typeof exerciseCatalog
+                            ].map((catalogExercise) => (
+                              <option key={catalogExercise}>{catalogExercise}</option>
+                            ))}
+                          </select>
+                        )}
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={editingEntry.weight}
+                          onChange={(event) =>
+                            updateEditingEntry("weight", event.target.value)
+                          }
+                          className={compactInputClassName}
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          value={editingEntry.reps}
+                          onChange={(event) =>
+                            updateEditingEntry("reps", event.target.value)
+                          }
+                          className={compactInputClassName}
+                        />
+                        <input
+                          value={editingEntry.note}
+                          onChange={(event) =>
+                            updateEditingEntry("note", event.target.value)
+                          }
+                          className={compactInputClassName}
+                          placeholder="Note"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void saveEditingEntry()}
+                            className="h-8 flex-1 rounded-md bg-white px-2 text-xs font-semibold text-black transition hover:bg-zinc-200"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingEntry(null)}
+                            className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-zinc-500">{entry.date}</span>
+                        <span className="truncate rounded-md border border-zinc-800 px-2 py-1 text-xs font-semibold text-zinc-300">
+                          {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
+                        </span>
+                        <span className="truncate text-zinc-500">{entry.bodyPart}</span>
+                        <span className="font-medium text-white">{entry.exercise}</span>
+                        <span>{entry.weight || "-"}</span>
+                        <span>{entry.reps || "-"}</span>
+                        <span className="text-zinc-500">{entry.note || "-"}</span>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditingEntry(entry)}
+                            className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteEntry(entry)}
+                            className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-red-500 hover:text-red-400"
+                          >
+                            Del
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           </section>
@@ -1291,6 +1549,43 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+function mapProfileRow(row: ProfileRow): Profile {
+  return {
+    id: row.id,
+    name: row.name,
+  };
+}
+
+function mapWorkoutRow(row: WorkoutRow): WorkoutEntry {
+  return {
+    kind: "workout",
+    id: row.id,
+    profileId: row.profile_id,
+    bodyPart: row.body_part,
+    date: row.workout_date,
+    exercise: row.exercise,
+    weight: Number(row.weight),
+    reps: Number(row.reps),
+    note: row.note,
+    createdAt: row.created_at,
+  };
+}
+
+function mapRestRow(row: RestRow): RestEntry {
+  return {
+    kind: "rest",
+    id: row.id,
+    profileId: row.profile_id,
+    bodyPart: "Rest",
+    date: row.rest_date,
+    exercise: "Rest day",
+    weight: 0,
+    reps: 0,
+    note: row.note,
+    createdAt: row.created_at,
+  };
 }
 
 const inputClassName =

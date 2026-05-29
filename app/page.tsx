@@ -137,8 +137,8 @@ const editableBodyParts = [...bodyParts, "Rest"];
 
 const STORAGE_KEY = "gym-workout-tracker-v2";
 const LEGACY_STORAGE_KEY = "gym-workout-tracker-v1";
-const DEFAULT_PROFILE_ID = "profile-you";
-const FRIEND_PROFILE_ID = "profile-friend";
+const DEFAULT_PROFILE_ID = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d";
+const FRIEND_PROFILE_ID = "e4b8b6a3-2c1b-4cf7-9a4f-5c24d1a58cde";
 
 const starterProfiles: Profile[] = [
   { id: DEFAULT_PROFILE_ID, name: "You" },
@@ -146,12 +146,12 @@ const starterProfiles: Profile[] = [
 ];
 
 const starterWorkoutEntries: WorkoutEntry[] = [
-  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 20, 12, "1st set", undefined, "starter-1"),
-  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 25, 7, "2nd set", undefined, "starter-2"),
-  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 25, 8, "3rd set", undefined, "starter-3"),
-  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg press", 20, 12, "1st set", undefined, "starter-4"),
-  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg press", 40, 12, "2nd set", undefined, "starter-5"),
-  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg press", 50, 11, "3rd set", undefined, "starter-6"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 20, 12, "1st set", undefined, "c8f1c8a1-1234-4bc1-a123-56789abcdef1"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 25, 7, "2nd set", undefined, "c8f1c8a2-1234-4bc2-a123-56789abcdef2"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Smith machine squats", 25, 8, "3rd set", undefined, "c8f1c8a3-1234-4bc3-a123-56789abcdef3"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg press", 20, 12, "1st set", undefined, "c8f1c8a4-1234-4bc4-a123-56789abcdef4"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg press", 40, 12, "2nd set", undefined, "c8f1c8a5-1234-4bc5-a123-56789abcdef5"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg press", 50, 11, "3rd set", undefined, "c8f1c8a6-1234-4bc6-a123-56789abcdef6"),
   makeWorkoutEntry(
     DEFAULT_PROFILE_ID,
     "Legs",
@@ -160,11 +160,11 @@ const starterWorkoutEntries: WorkoutEntry[] = [
     0,
     "2 sets logged without weight/reps",
     undefined,
-    "starter-7",
+    "c8f1c8a7-1234-4bc7-a123-56789abcdef7",
   ),
-  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 30, 13, "1st set", undefined, "starter-8"),
-  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 50, 12, "2nd set", undefined, "starter-9"),
-  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 60, 10, "3rd set", undefined, "starter-10"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 30, 13, "1st set", undefined, "c8f1c8a8-1234-4bc8-a123-56789abcdef8"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 50, 12, "2nd set", undefined, "c8f1c8a9-1234-4bc9-a123-56789abcdef9"),
+  makeWorkoutEntry(DEFAULT_PROFILE_ID, "Legs", "Leg extensions", 60, 10, "3rd set", undefined, "c8f1c8aa-1234-4bca-a123-56789abcdefa"),
 ];
 
 function makeWorkoutEntry(

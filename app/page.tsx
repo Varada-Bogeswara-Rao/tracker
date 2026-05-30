@@ -540,7 +540,7 @@ export default function Home() {
   function toggleDateExpanded(date: string) {
     setExpandedDates((prev) => ({
       ...prev,
-      [date]: !prev[date],
+      [date]: prev[date] === false ? true : false,
     }));
   }
 
@@ -909,11 +909,13 @@ export default function Home() {
   async function addRestDay() {
     const entry = makeRestEntry(activeProfile.id, restNote.trim() || "Recovery", date);
 
-    const { error: insertError } = await supabase.from("rest_days").insert({
+    const { error: insertError } = await supabase.from("rest_days").upsert({
       id: entry.id,
       profile_id: entry.profileId,
       rest_date: entry.date,
       note: entry.note,
+    }, {
+      onConflict: "profile_id,rest_date"
     });
 
     if (insertError) {
@@ -1116,7 +1118,9 @@ export default function Home() {
                 : "text-zinc-400 hover:text-zinc-200"
             }`}
           >
-            <span className="text-sm mb-0.5">📝</span>
+            <svg className="w-4 h-4 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
             Log Set
           </button>
           <button
@@ -1128,7 +1132,9 @@ export default function Home() {
                 : "text-zinc-400 hover:text-zinc-200"
             }`}
           >
-            <span className="text-sm mb-0.5">📊</span>
+            <svg className="w-4 h-4 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
             History
           </button>
           <button
@@ -1140,7 +1146,9 @@ export default function Home() {
                 : "text-zinc-400 hover:text-zinc-200"
             }`}
           >
-            <span className="text-sm mb-0.5">🏆</span>
+            <svg className="w-4 h-4 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
             Analytics
           </button>
         </div>
@@ -1558,6 +1566,7 @@ export default function Home() {
                   ))}
                 </div>
               </div>
+            </div>
                        {/* Collapsible History Logs Grouped by Date */}
             <div className={`space-y-4 lg:block ${mobileTab === "history" ? "block" : "hidden"}`}>
               <div className="flex flex-col gap-3 rounded-xl border border-zinc-900 bg-zinc-950/20 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1583,7 +1592,7 @@ export default function Home() {
                   </div>
                 ) : (
                   groupedEntriesByDate.map((day) => {
-                    const isExpanded = !!expandedDates[day.date];
+                    const isExpanded = expandedDates[day.date] !== false;
                     const dayLabel = day.isRest
                       ? "Rest Day"
                       : `${day.bodyParts.join(" & ")} Day`;
@@ -1760,8 +1769,11 @@ export default function Home() {
                                         <div className="flex items-center gap-5">
                                           <div>
                                             <p className="text-[9px] uppercase tracking-wider text-zinc-650 font-bold">Logged By</p>
-                                            <span className="mt-0.5 inline-block text-xs font-semibold text-zinc-300">
-                                              👤 {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
+                                            <span className="mt-0.5 inline-flex items-center text-xs font-semibold text-zinc-300">
+                                              <svg className="w-3.5 h-3.5 mr-1 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                              </svg>
+                                              {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
                                             </span>
                                           </div>
                                           {entry.kind !== "rest" && (
@@ -1903,8 +1915,11 @@ export default function Home() {
                                         </>
                                       ) : (
                                         <>
-                                          <span className="truncate rounded-md border border-zinc-900 bg-black/40 px-2 py-0.5 text-xs font-semibold text-zinc-350 self-start">
-                                            👤 {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
+                                          <span className="truncate rounded-md border border-zinc-900 bg-black/40 px-2 py-0.5 text-xs font-semibold text-zinc-350 self-start flex items-center gap-1">
+                                            <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                              <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                            </svg>
+                                            {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
                                           </span>
                                           <span className="font-semibold text-white truncate">
                                             {entry.exercise}
@@ -1943,7 +1958,7 @@ export default function Home() {
                   })
                 )}
               </div>
-            </div>      </div>
+            </div>
           </section>
         </div>
       </section>

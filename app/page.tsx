@@ -535,6 +535,52 @@ export default function Home() {
     return sortEntries(visible);
   }, [activeEntries, selectedExercise]);
 
+  const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
+
+  function toggleDateExpanded(date: string) {
+    setExpandedDates((prev) => ({
+      ...prev,
+      [date]: !prev[date],
+    }));
+  }
+
+  const groupedEntriesByDate = useMemo(() => {
+    const groupsMap: Record<string, Entry[]> = {};
+    filteredEntries.forEach((entry) => {
+      if (!groupsMap[entry.date]) {
+        groupsMap[entry.date] = [];
+      }
+      groupsMap[entry.date].push(entry);
+    });
+
+    const sortedDates = Object.keys(groupsMap).sort((a, b) => b.localeCompare(a));
+
+    return sortedDates.map((date) => {
+      const dateEntries = groupsMap[date];
+      const restEntry = dateEntries.find(isRestEntry) as RestEntry | undefined;
+
+      let bodyPartsList: string[] = [];
+      let isRest = false;
+      let restNote = "";
+
+      if (restEntry) {
+        isRest = true;
+        restNote = restEntry.note;
+        bodyPartsList = ["Rest"];
+      } else {
+        bodyPartsList = Array.from(new Set(dateEntries.map((e) => e.bodyPart)));
+      }
+
+      return {
+        date,
+        isRest,
+        restNote,
+        bodyParts: bodyPartsList,
+        entries: dateEntries,
+      };
+    });
+  }, [filteredEntries]);
+
   const progress = useMemo(
     () => getExerciseProgress(activeWorkoutEntries),
     [activeWorkoutEntries],
@@ -775,6 +821,14 @@ export default function Home() {
 
   async function removeProfile(profileId: string) {
     if (profiles.length <= 1) {
+      return;
+    }
+
+    const profileName = profiles.find((p) => p.id === profileId)?.name || "this user";
+    const confirmed = window.confirm(
+      `Are you sure you want to remove "${profileName}" and all of their logged workouts and rest days? This action cannot be undone.`
+    );
+    if (!confirmed) {
       return;
     }
 
@@ -1504,18 +1558,16 @@ export default function Home() {
                   ))}
                 </div>
               </div>
-            </div>
-
-            {/* History Components (Logs table on desktop, cards on mobile) */}
+                       {/* Collapsible History Logs Grouped by Date */}
             <div className={`space-y-4 lg:block ${mobileTab === "history" ? "block" : "hidden"}`}>
-              <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 rounded-xl border border-zinc-900 bg-zinc-950/20 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="text-base font-semibold text-white">
                   {activeProfile.name} log
                 </h2>
                 <select
                   value={selectedExercise}
                   onChange={(event) => setSelectedExercise(event.target.value)}
-                  className={`${selectClassName} bg-black/50 border-zinc-800/80 focus:border-zinc-500`}
+                  className={`${selectClassName} bg-black border-zinc-900 focus:border-zinc-500`}
                 >
                   <option>All</option>
                   {exercises.map((name) => (
@@ -1524,354 +1576,374 @@ export default function Home() {
                 </select>
               </div>
 
-              {/* Mobile Logs View (Card layouts) */}
-              <div className="block md:hidden space-y-3">
-                {filteredEntries.length === 0 ? (
-                  <div className="text-center py-8 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/5">
+              <div className="space-y-3">
+                {groupedEntriesByDate.length === 0 ? (
+                  <div className="text-center py-8 rounded-xl border border-dashed border-zinc-900 bg-zinc-950/20">
                     <p className="text-sm text-zinc-500">No entries logged yet.</p>
                   </div>
                 ) : (
-                  filteredEntries.map((entry) => (
-                    <div key={entry.id}>
-                      {editingEntry?.id === entry.id ? (
-                        <article className="rounded-xl border border-white/80 bg-zinc-950 p-4 shadow-lg space-y-3">
-                          <div className="grid grid-cols-2 gap-2">
-                            <FieldLabel label="Date">
-                              <input
-                                type="date"
-                                value={editingEntry.date}
-                                onChange={(event) =>
-                                  updateEditingEntry("date", event.target.value)
-                                }
-                                className={compactInputClassName}
-                              />
-                            </FieldLabel>
-                            <FieldLabel label="Person">
-                              <select
-                                value={editingEntry.profileId}
-                                onChange={(event) =>
-                                  updateEditingEntry("profileId", event.target.value)
-                                }
-                                className={compactSelectClassName}
-                              >
-                                {profiles.map((profile) => (
-                                  <option key={profile.id} value={profile.id}>
-                                    {profile.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </FieldLabel>
-                          </div>
+                  groupedEntriesByDate.map((day) => {
+                    const isExpanded = !!expandedDates[day.date];
+                    const dayLabel = day.isRest
+                      ? "Rest Day"
+                      : `${day.bodyParts.join(" & ")} Day`;
 
-                          <div className="grid grid-cols-2 gap-2">
-                            <FieldLabel label="Body part">
-                              <select
-                                value={editingEntry.bodyPart}
-                                onChange={(event) =>
-                                  updateEditingEntry("bodyPart", event.target.value)
-                                }
-                                className={compactSelectClassName}
-                              >
-                                {editableBodyParts.map((part) => (
-                                  <option key={part}>{part}</option>
-                                ))}
-                              </select>
-                            </FieldLabel>
-                            <FieldLabel label="Exercise">
-                              {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
-                                <input value="Rest day" readOnly className={compactInputClassName} />
-                              ) : (
-                                <select
-                                  value={editingEntry.exercise}
-                                  onChange={(event) =>
-                                    updateEditingEntry("exercise", event.target.value)
-                                  }
-                                  className={compactSelectClassName}
-                                >
-                                  {exerciseCatalog[
-                                    editingEntry.bodyPart as keyof typeof exerciseCatalog
-                                  ].map((catalogExercise) => (
-                                    <option key={catalogExercise}>{catalogExercise}</option>
-                                  ))}
-                                </select>
-                              )}
-                            </FieldLabel>
-                          </div>
-
-                          {editingEntry.kind !== "rest" && editingEntry.bodyPart !== "Rest" && (
-                            <div className="grid grid-cols-2 gap-2">
-                              <FieldLabel label="Weight">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.5"
-                                  value={editingEntry.weight}
-                                  onChange={(event) =>
-                                    updateEditingEntry("weight", event.target.value)
-                                  }
-                                  className={compactInputClassName}
-                                />
-                              </FieldLabel>
-                              <FieldLabel label="Reps">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={editingEntry.reps}
-                                  onChange={(event) =>
-                                    updateEditingEntry("reps", event.target.value)
-                                  }
-                                  className={compactInputClassName}
-                                />
-                              </FieldLabel>
-                            </div>
-                          )}
-
-                          <FieldLabel label="Note">
-                            <input
-                              value={editingEntry.note}
-                              onChange={(event) =>
-                                updateEditingEntry("note", event.target.value)
-                              }
-                              className={compactInputClassName}
-                              placeholder="Note"
-                            />
-                          </FieldLabel>
-
-                          <div className="flex gap-2 pt-2 border-t border-zinc-900">
-                            <button
-                              type="button"
-                              onClick={() => void saveEditingEntry()}
-                              className="h-9 flex-1 rounded-lg bg-white px-3 text-xs font-semibold text-black transition hover:bg-zinc-200"
-                            >
-                              Save
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingEntry(null)}
-                              className="h-9 flex-1 rounded-lg border border-zinc-800 px-3 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </article>
-                      ) : (
-                        <article className="relative overflow-hidden rounded-xl border border-zinc-800/80 bg-zinc-900/10 backdrop-blur-md p-4 shadow-sm hover:border-zinc-700/50 transition">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-xs text-zinc-500 font-medium">{entry.date}</p>
-                              <h4 className="mt-1 font-semibold text-white text-base leading-snug truncate-2-lines">{entry.exercise}</h4>
-                            </div>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase border ${
-                              entry.kind === "rest"
+                    return (
+                      <div key={day.date} className="rounded-xl border border-zinc-900 bg-zinc-950/10 overflow-hidden transition hover:border-zinc-800">
+                        {/* Day Header Row */}
+                        <button
+                          type="button"
+                          onClick={() => toggleDateExpanded(day.date)}
+                          className="w-full flex items-center justify-between gap-4 px-4 py-3.5 bg-zinc-950/40 border-b border-zinc-900 text-left transition hover:bg-zinc-950/60"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-semibold text-white">{day.date}</span>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase border ${
+                              day.isRest
                                 ? "bg-amber-950/20 text-amber-400 border-amber-800/30"
                                 : "bg-violet-950/20 text-violet-400 border-violet-800/30"
                             }`}>
-                              {entry.bodyPart}
+                              {dayLabel}
                             </span>
                           </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-zinc-500 font-medium">
+                              {day.entries.length} {day.entries.length === 1 ? "set" : "sets"}
+                            </span>
+                            <span className="text-xs text-zinc-400 font-semibold select-none">
+                              {isExpanded ? "▲" : "▼"}
+                            </span>
+                          </div>
+                        </button>
 
-                          <div className="mt-3.5 flex items-center justify-between gap-4 border-t border-zinc-850 pt-3">
-                            <div className="flex items-center gap-5">
-                              <div>
-                                <p className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">Logged By</p>
-                                <span className="mt-0.5 inline-block text-xs font-semibold text-zinc-300">
-                                  👤 {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
-                                </span>
+                        {/* Day Content (Expanded exercise entries list) */}
+                        {isExpanded && (
+                          <div className="p-3 md:p-4 space-y-3 bg-black/40">
+                            
+                            {/* Mobile View: Exercise Cards inside Expanded Day */}
+                            <div className="block md:hidden space-y-3">
+                              {day.entries.map((entry) => (
+                                <div key={entry.id}>
+                                  {editingEntry?.id === entry.id ? (
+                                    <article className="rounded-xl border border-white/80 bg-zinc-950 p-4 shadow-lg space-y-3">
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <FieldLabel label="Date">
+                                          <input
+                                            type="date"
+                                            value={editingEntry.date}
+                                            onChange={(event) =>
+                                              updateEditingEntry("date", event.target.value)
+                                            }
+                                            className={compactInputClassName}
+                                          />
+                                        </FieldLabel>
+                                        <FieldLabel label="Person">
+                                          <select
+                                            value={editingEntry.profileId}
+                                            onChange={(event) =>
+                                              updateEditingEntry("profileId", event.target.value)
+                                            }
+                                            className={compactSelectClassName}
+                                          >
+                                            {profiles.map((profile) => (
+                                              <option key={profile.id} value={profile.id}>
+                                                {profile.name}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </FieldLabel>
+                                      </div>
+
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <FieldLabel label="Body part">
+                                          <select
+                                            value={editingEntry.bodyPart}
+                                            onChange={(event) =>
+                                              updateEditingEntry("bodyPart", event.target.value)
+                                            }
+                                            className={compactSelectClassName}
+                                          >
+                                            {editableBodyParts.map((part) => (
+                                              <option key={part}>{part}</option>
+                                            ))}
+                                          </select>
+                                        </FieldLabel>
+                                        <FieldLabel label="Exercise">
+                                          {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
+                                            <input value="Rest day" readOnly className={compactInputClassName} />
+                                          ) : (
+                                            <select
+                                              value={editingEntry.exercise}
+                                              onChange={(event) =>
+                                                updateEditingEntry("exercise", event.target.value)
+                                              }
+                                              className={compactSelectClassName}
+                                            >
+                                              {(fullExerciseCatalog[editingEntry.bodyPart] || []).map((catalogExercise) => (
+                                                <option key={catalogExercise}>{catalogExercise}</option>
+                                              ))}
+                                            </select>
+                                          )}
+                                        </FieldLabel>
+                                      </div>
+
+                                      {editingEntry.kind !== "rest" && editingEntry.bodyPart !== "Rest" && (
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <FieldLabel label="Weight">
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="0.5"
+                                              value={editingEntry.weight}
+                                              onChange={(event) =>
+                                                updateEditingEntry("weight", event.target.value)
+                                              }
+                                              className={compactInputClassName}
+                                            />
+                                          </FieldLabel>
+                                          <FieldLabel label="Reps">
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={editingEntry.reps}
+                                              onChange={(event) =>
+                                                updateEditingEntry("reps", event.target.value)
+                                              }
+                                              className={compactInputClassName}
+                                            />
+                                          </FieldLabel>
+                                        </div>
+                                      )}
+
+                                      <FieldLabel label="Note">
+                                        <input
+                                          value={editingEntry.note}
+                                          onChange={(event) =>
+                                            updateEditingEntry("note", event.target.value)
+                                          }
+                                          className={compactInputClassName}
+                                          placeholder="Note"
+                                        />
+                                      </FieldLabel>
+
+                                      <div className="flex gap-2 pt-2 border-t border-zinc-900">
+                                        <button
+                                          type="button"
+                                          onClick={() => void saveEditingEntry()}
+                                          className="h-9 flex-1 rounded-lg bg-white px-3 text-xs font-semibold text-black transition hover:bg-zinc-200"
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingEntry(null)}
+                                          className="h-9 flex-1 rounded-lg border border-zinc-800 px-3 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </article>
+                                  ) : (
+                                    <article className="relative overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40 p-3.5 shadow-sm hover:border-zinc-800 transition">
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                          <h4 className="font-semibold text-white text-[15px] leading-snug">{entry.exercise}</h4>
+                                        </div>
+                                        {entry.kind !== "rest" && (
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-violet-950/20 text-violet-400 border border-violet-850/30 uppercase">
+                                            {entry.bodyPart}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="mt-3 flex items-center justify-between gap-4 border-t border-zinc-900 pt-2.5">
+                                        <div className="flex items-center gap-5">
+                                          <div>
+                                            <p className="text-[9px] uppercase tracking-wider text-zinc-650 font-bold">Logged By</p>
+                                            <span className="mt-0.5 inline-block text-xs font-semibold text-zinc-300">
+                                              👤 {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
+                                            </span>
+                                          </div>
+                                          {entry.kind !== "rest" && (
+                                            <>
+                                              <div>
+                                                <p className="text-[9px] uppercase tracking-wider text-zinc-650 font-bold">Weight</p>
+                                                <p className="mt-0.5 text-xs font-bold text-white">{entry.weight ? `${entry.weight} kg` : "-"}</p>
+                                              </div>
+                                              <div>
+                                                <p className="text-[9px] uppercase tracking-wider text-zinc-650 font-bold">Reps</p>
+                                                <p className="mt-0.5 text-xs font-bold text-white">{entry.reps || "-"}</p>
+                                              </div>
+                                            </>
+                                          )}
+                                        </div>
+
+                                        <div className="flex gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => startEditingEntry(entry)}
+                                            className="h-8 rounded-lg border border-zinc-900 bg-black px-3 text-xs font-semibold text-zinc-300 transition hover:border-zinc-700 hover:text-white"
+                                          >
+                                            Edit
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => void deleteEntry(entry)}
+                                            className="h-8 rounded-lg border border-zinc-900 bg-black px-2.5 text-xs font-semibold text-zinc-550 transition hover:border-red-900/50 hover:text-red-400"
+                                          >
+                                            Del
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {entry.note && (
+                                        <div className="mt-2.5 rounded-lg bg-zinc-950/70 border border-zinc-900 px-3 py-2 text-xs text-zinc-450 font-medium">
+                                          <span className="font-semibold text-zinc-550">Note: </span>
+                                          {entry.note}
+                                        </div>
+                                      )}
+                                    </article>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Desktop View: Sub-Table inside Expanded Day */}
+                            <div className="hidden md:block overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/15">
+                              <div className="overflow-x-auto">
+                                <div className="min-w-[800px]">
+                                  <div className="grid grid-cols-[110px_1fr_80px_70px_1fr_120px] gap-3 border-b border-zinc-900 bg-black/60 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                                    <span>Person</span>
+                                    <span>Exercise / Rest Log</span>
+                                    <span>Weight</span>
+                                    <span>Reps</span>
+                                    <span>Note</span>
+                                    <span>Actions</span>
+                                  </div>
+                                  {day.entries.map((entry) => (
+                                    <div
+                                      key={entry.id}
+                                      className="grid grid-cols-[110px_1fr_80px_70px_1fr_120px] gap-3 border-b border-zinc-900 px-4 py-2.5 text-sm text-zinc-200 last:border-b-0"
+                                    >
+                                      {editingEntry?.id === entry.id ? (
+                                        <>
+                                          <select
+                                            value={editingEntry.profileId}
+                                            onChange={(event) =>
+                                              updateEditingEntry("profileId", event.target.value)
+                                            }
+                                            className={compactSelectClassName}
+                                          >
+                                            {profiles.map((profile) => (
+                                              <option key={profile.id} value={profile.id}>
+                                                {profile.name}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
+                                            <input value="Rest day" readOnly className={compactInputClassName} />
+                                          ) : (
+                                            <select
+                                              value={editingEntry.exercise}
+                                              onChange={(event) =>
+                                                updateEditingEntry("exercise", event.target.value)
+                                              }
+                                              className={compactSelectClassName}
+                                            >
+                                              {(fullExerciseCatalog[editingEntry.bodyPart] || []).map((catalogExercise) => (
+                                                <option key={catalogExercise}>{catalogExercise}</option>
+                                              ))}
+                                            </select>
+                                          )}
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="0.5"
+                                            value={editingEntry.weight}
+                                            onChange={(event) =>
+                                              updateEditingEntry("weight", event.target.value)
+                                            }
+                                            className={compactInputClassName}
+                                            disabled={editingEntry.kind === "rest"}
+                                          />
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            value={editingEntry.reps}
+                                            onChange={(event) =>
+                                              updateEditingEntry("reps", event.target.value)
+                                            }
+                                            className={compactInputClassName}
+                                            disabled={editingEntry.kind === "rest"}
+                                          />
+                                          <input
+                                            value={editingEntry.note}
+                                            onChange={(event) =>
+                                              updateEditingEntry("note", event.target.value)
+                                            }
+                                            className={compactInputClassName}
+                                            placeholder="Note"
+                                          />
+                                          <div className="flex gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => void saveEditingEntry()}
+                                              className="h-8 flex-1 rounded-md bg-white px-2 text-xs font-semibold text-black transition hover:bg-zinc-200"
+                                            >
+                                              Save
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setEditingEntry(null)}
+                                              className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span className="truncate rounded-md border border-zinc-900 bg-black/40 px-2 py-0.5 text-xs font-semibold text-zinc-350 self-start">
+                                            👤 {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
+                                          </span>
+                                          <span className="font-semibold text-white truncate">
+                                            {entry.exercise}
+                                          </span>
+                                          <span className="font-bold text-zinc-100">{entry.kind !== "rest" && entry.weight ? `${entry.weight} kg` : "-"}</span>
+                                          <span className="font-bold text-zinc-150">{entry.kind !== "rest" && entry.reps ? entry.reps : "-"}</span>
+                                          <span className="text-zinc-500 truncate">{entry.note || "-"}</span>
+                                          <div className="flex gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => startEditingEntry(entry)}
+                                              className="h-8 flex-1 rounded-md border border-zinc-900 bg-black px-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-700 hover:text-white"
+                                            >
+                                              Edit
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => void deleteEntry(entry)}
+                                              className="h-8 flex-1 rounded-md border border-zinc-900 bg-black px-2 text-xs font-semibold text-zinc-500 transition hover:border-red-950 hover:text-red-400"
+                                            >
+                                              Del
+                                            </button>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
-                              {entry.kind !== "rest" && (
-                                <>
-                                  <div>
-                                    <p className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">Weight</p>
-                                    <p className="mt-0.5 text-xs font-bold text-white">{entry.weight ? `${entry.weight} kg` : "-"}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">Reps</p>
-                                    <p className="mt-0.5 text-xs font-bold text-white">{entry.reps || "-"}</p>
-                                  </div>
-                                </>
-                              )}
                             </div>
 
-                            <div className="flex gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => startEditingEntry(entry)}
-                                className="h-8 rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-xs font-semibold text-zinc-300 transition hover:border-zinc-600 hover:text-white"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void deleteEntry(entry)}
-                                className="h-8 rounded-lg border border-zinc-800 bg-zinc-900/30 px-2.5 text-xs font-semibold text-zinc-500 transition hover:border-red-900/60 hover:text-red-400"
-                              >
-                                Del
-                              </button>
-                            </div>
                           </div>
-
-                          {entry.note && (
-                            <div className="mt-3 rounded-lg bg-zinc-950/40 border border-zinc-850 px-3 py-2 text-xs text-zinc-400 font-medium">
-                              <span className="font-semibold text-zinc-500">Note: </span>
-                              {entry.note}
-                            </div>
-                          )}
-                        </article>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Desktop Logs View (Table layout, visible on medium+ screens) */}
-              <div className="hidden md:block overflow-hidden rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md">
-                <div className="overflow-x-auto">
-                  <div className="min-w-[900px]">
-                    <div className="grid grid-cols-[92px_106px_96px_1fr_74px_58px_1fr_118px] gap-3 border-b border-zinc-850 bg-black/60 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                      <span>Date</span>
-                      <span>Person</span>
-                      <span>Part</span>
-                      <span>Exercise</span>
-                      <span>Weight</span>
-                      <span>Reps</span>
-                      <span>Note</span>
-                      <span></span>
-                    </div>
-                    {filteredEntries.map((entry) => (
-                      <div
-                        key={entry.id}
-                        className="grid grid-cols-[92px_106px_96px_1fr_74px_58px_1fr_118px] gap-3 border-b border-zinc-850 px-4 py-3 text-sm text-zinc-200 last:border-b-0"
-                      >
-                        {editingEntry?.id === entry.id ? (
-                          <>
-                            <input
-                              type="date"
-                              value={editingEntry.date}
-                              onChange={(event) =>
-                                updateEditingEntry("date", event.target.value)
-                              }
-                              className={compactInputClassName}
-                            />
-                            <select
-                              value={editingEntry.profileId}
-                              onChange={(event) =>
-                                updateEditingEntry("profileId", event.target.value)
-                              }
-                              className={compactSelectClassName}
-                            >
-                              {profiles.map((profile) => (
-                                <option key={profile.id} value={profile.id}>
-                                  {profile.name}
-                                </option>
-                              ))}
-                            </select>
-                            <select
-                              value={editingEntry.bodyPart}
-                              onChange={(event) =>
-                                updateEditingEntry("bodyPart", event.target.value)
-                              }
-                              className={compactSelectClassName}
-                            >
-                              {editableBodyParts.map((part) => (
-                                <option key={part}>{part}</option>
-                              ))}
-                            </select>
-                            {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
-                              <input value="Rest day" readOnly className={compactInputClassName} />
-                            ) : (
-                              <select
-                                value={editingEntry.exercise}
-                                onChange={(event) =>
-                                  updateEditingEntry("exercise", event.target.value)
-                                }
-                                className={compactSelectClassName}
-                              >
-                                {exerciseCatalog[
-                                  editingEntry.bodyPart as keyof typeof exerciseCatalog
-                                ].map((catalogExercise) => (
-                                  <option key={catalogExercise}>{catalogExercise}</option>
-                                ))}
-                              </select>
-                            )}
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.5"
-                              value={editingEntry.weight}
-                              onChange={(event) =>
-                                updateEditingEntry("weight", event.target.value)
-                              }
-                              className={compactInputClassName}
-                            />
-                            <input
-                              type="number"
-                              min="0"
-                              value={editingEntry.reps}
-                              onChange={(event) =>
-                                updateEditingEntry("reps", event.target.value)
-                              }
-                              className={compactInputClassName}
-                            />
-                            <input
-                              value={editingEntry.note}
-                              onChange={(event) =>
-                                updateEditingEntry("note", event.target.value)
-                              }
-                              className={compactInputClassName}
-                              placeholder="Note"
-                            />
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => void saveEditingEntry()}
-                                className="h-8 flex-1 rounded-md bg-white px-2 text-xs font-semibold text-black transition hover:bg-zinc-200"
-                              >
-                                Save
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingEntry(null)}
-                                className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-zinc-500">{entry.date}</span>
-                            <span className="truncate rounded-md border border-zinc-800 px-2 py-1 text-xs font-semibold text-zinc-300">
-                              {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
-                            </span>
-                            <span className="truncate text-zinc-500">{entry.bodyPart}</span>
-                            <span className="font-semibold text-white">{entry.exercise}</span>
-                            <span>{entry.weight || "-"}</span>
-                            <span>{entry.reps || "-"}</span>
-                            <span className="text-zinc-500">{entry.note || "-"}</span>
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => startEditingEntry(entry)}
-                                className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-500"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void deleteEntry(entry)}
-                                className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-red-500 hover:text-red-400"
-                              >
-                                Del
-                              </button>
-                            </div>
-                          </>
                         )}
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    );
+                  })
+                )}
               </div>
-            </div>
+            </div>      </div>
           </section>
         </div>
       </section>

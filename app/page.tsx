@@ -236,10 +236,10 @@ function normalizeExercise(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function getBodyPartForExercise(exercise: string, fallback = "Legs") {
+function getBodyPartForExercise(exercise: string, catalog: Record<string, readonly string[]> = exerciseCatalog, fallback = "Legs") {
   const normalizedExercise = normalizeExercise(exercise);
-  const match = bodyParts.find((bodyPart) =>
-    exerciseCatalog[bodyPart as keyof typeof exerciseCatalog].some(
+  const match = Object.keys(catalog).find((bodyPart) =>
+    catalog[bodyPart].some(
       (catalogExercise) =>
         normalizeExercise(catalogExercise) === normalizedExercise,
     ),
@@ -261,6 +261,7 @@ function parseWorkoutNotes(
   fallbackDate: string,
   profileId: string,
   fallbackBodyPart: string,
+  catalog: Record<string, readonly string[]> = exerciseCatalog,
 ) {
   const entries: WorkoutEntry[] = [];
   let currentExercise = "";
@@ -283,7 +284,7 @@ function parseWorkoutNotes(
         entries.push(
           makeWorkoutEntry(
             profileId,
-            getBodyPartForExercise(currentExercise, fallbackBodyPart),
+            getBodyPartForExercise(currentExercise, catalog, fallbackBodyPart),
             currentExercise || "Workout set",
             Number(setMatch[1]),
             Number(setMatch[2]),
@@ -299,7 +300,7 @@ function parseWorkoutNotes(
       entries.push(
         makeWorkoutEntry(
           profileId,
-          getBodyPartForExercise(currentExercise, fallbackBodyPart),
+          getBodyPartForExercise(currentExercise, catalog, fallbackBodyPart),
           currentExercise,
           0,
           0,
@@ -328,7 +329,7 @@ function parseLegacySnapshot(raw: string): LegacyState | null {
   }
 }
 
-function legacyToEntries(legacy: LegacyState) {
+function legacyToEntries(legacy: LegacyState, catalog: Record<string, readonly string[]> = exerciseCatalog) {
   const workoutEntries: WorkoutEntry[] = [];
   const restEntries: RestEntry[] = [];
 
@@ -348,7 +349,7 @@ function legacyToEntries(legacy: LegacyState) {
     workoutEntries.push(
       makeWorkoutEntry(
         set.profileId,
-        set.bodyPart || getBodyPartForExercise(set.exercise, "Legs"),
+        set.bodyPart || getBodyPartForExercise(set.exercise, catalog, "Legs"),
         set.exercise,
         set.weight,
         set.reps,
@@ -445,6 +446,55 @@ export default function Home() {
   const [selectedExercise, setSelectedExercise] = useState("All");
   const [editingEntry, setEditingEntry] = useState<EditingEntryDraft | null>(null);
 
+  const [customExercises, setCustomExercises] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem("gym-workout-tracker-custom-exercises");
+      if (stored) {
+        try {
+          setCustomExercises(JSON.parse(stored));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+  }, []);
+
+  const fullExerciseCatalog = useMemo(() => {
+    const combined: Record<string, string[]> = {};
+    Object.keys(exerciseCatalog).forEach((key) => {
+      combined[key] = [
+        ...exerciseCatalog[key as keyof typeof exerciseCatalog],
+        ...(customExercises[key] || []),
+      ];
+    });
+    return combined;
+  }, [customExercises]);
+
+  function addCustomExercise(bodyPart: string, name: string) {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+
+    setCustomExercises((prev) => {
+      const currentList = prev[bodyPart] || [];
+      if (
+        currentList.includes(cleanName) ||
+        (exerciseCatalog[bodyPart as keyof typeof exerciseCatalog] as readonly string[])?.includes(cleanName)
+      ) {
+        return prev;
+      }
+      const next = {
+        ...prev,
+        [bodyPart]: [...currentList, cleanName],
+      };
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("gym-workout-tracker-custom-exercises", JSON.stringify(next));
+      }
+      return next;
+    });
+  }
+
   const activeProfile =
     profiles.find((profile) => profile.id === activeProfileId) || profiles[0];
   const compareProfile =
@@ -468,7 +518,7 @@ export default function Home() {
     () => compareEntries.filter((entry) => !isRestEntry(entry)),
     [compareEntries],
   );
-  const catalogExercises = exerciseCatalog[bodyPart as keyof typeof exerciseCatalog];
+  const catalogExercises = fullExerciseCatalog[bodyPart] || [];
   const exercises = useMemo(
     () => Array.from(new Set(activeWorkoutEntries.map((entry) => entry.exercise))).sort(),
     [activeWorkoutEntries],
@@ -501,11 +551,11 @@ export default function Home() {
 
       return {
         name: item.name,
-        bodyPart: exerciseEntries[0]?.bodyPart || getBodyPartForExercise(item.name),
+        bodyPart: exerciseEntries[0]?.bodyPart || getBodyPartForExercise(item.name, fullExerciseCatalog),
         sets: exerciseEntries,
       };
     });
-  }, [activeWorkoutEntries, progress]);
+  }, [activeWorkoutEntries, progress, fullExerciseCatalog]);
 
   const previousExerciseEntries = useMemo(() => {
     const matchingEntries = activeWorkoutEntries
@@ -584,7 +634,7 @@ export default function Home() {
       const legacy = readLegacyStateFromWindow();
       const sourceProfiles = legacy?.profiles || starterProfiles;
       const sourceEntries = legacy
-        ? legacyToEntries(legacy)
+        ? legacyToEntries(legacy, fullExerciseCatalog)
         : { workoutEntries: starterWorkoutEntries, restEntries: [] };
 
       const profilesToInsert = sourceProfiles.map((profile) => ({
@@ -643,7 +693,7 @@ export default function Home() {
       profiles: nextProfiles.length ? nextProfiles : starterProfiles,
       entries: sortEntries(nextEntries.length ? nextEntries : starterWorkoutEntries),
     };
-  }, [supabase]);
+  }, [supabase, fullExerciseCatalog]);
 
   useEffect(() => {
     let cancelled = false;
@@ -827,6 +877,7 @@ export default function Home() {
       date,
       activeProfile.id,
       bodyPart,
+      fullExerciseCatalog,
     );
     const workoutRows = importedEntries.map((entry) => ({
       id: entry.id,
@@ -895,7 +946,7 @@ export default function Home() {
           };
         }
 
-        const nextExercises = exerciseCatalog[value as keyof typeof exerciseCatalog];
+        const nextExercises = fullExerciseCatalog[value] || [];
         return {
           ...current,
           bodyPart: value,
@@ -976,12 +1027,8 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 relative overflow-hidden">
-      {/* Premium Ambient Background Glows */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-violet-950/15 blur-[120px] pointer-events-none" />
-      <div className="absolute top-[-20%] right-[-10%] w-[60%] h-[60%] rounded-full bg-indigo-950/20 blur-[150px] pointer-events-none" />
-
-      <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 relative z-10">
+    <main className="min-h-screen bg-black text-zinc-100">
+      <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <header className="flex flex-col gap-5 border-b border-zinc-900 pb-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">
@@ -1286,19 +1333,19 @@ export default function Home() {
               </button>
             </section>
 
-            <section className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4">
+            <section className="rounded-xl border border-zinc-900 bg-zinc-950/20 p-4">
               <h2 className="text-base font-semibold text-white">Exercise list</h2>
               <div className="mt-4 grid gap-3">
                 {bodyParts.map((part) => (
                   <div
                     key={part}
-                    className="rounded-lg border border-zinc-850 bg-black/45 p-3"
+                    className="rounded-lg border border-zinc-900 bg-black p-3"
                   >
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
                       {part}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {exerciseCatalog[part as keyof typeof exerciseCatalog].map(
+                      {(fullExerciseCatalog[part] || []).map(
                         (catalogExercise) => (
                           <button
                             key={catalogExercise}
@@ -1307,13 +1354,36 @@ export default function Home() {
                               setBodyPart(part);
                               setExercise(catalogExercise);
                             }}
-                            className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-2.5 py-1.5 text-left text-xs font-medium text-zinc-300 transition hover:border-zinc-500 hover:text-white"
+                            className="rounded-lg border border-zinc-900 bg-zinc-950/30 px-2.5 py-1.5 text-left text-xs font-medium text-zinc-300 transition hover:border-zinc-700 hover:text-white"
                           >
                             {catalogExercise}
                           </button>
                         ),
                       )}
                     </div>
+                    {/* Add Custom Exercise Form */}
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const form = e.currentTarget;
+                        const input = form.elements.namedItem("newExercise") as HTMLInputElement;
+                        const name = input.value.trim();
+                        if (name) {
+                          addCustomExercise(part, name);
+                          input.value = "";
+                        }
+                      }}
+                      className="mt-3 flex gap-1.5"
+                    >
+                      <input
+                        name="newExercise"
+                        className="h-7 min-w-0 flex-1 rounded bg-black px-2 text-[11px] text-zinc-300 border border-zinc-900 focus:border-zinc-800 outline-none placeholder:text-zinc-800"
+                        placeholder="Add custom exercise..."
+                      />
+                      <button className="h-7 rounded bg-zinc-950 border border-zinc-900 px-2.5 text-[11px] font-semibold text-zinc-400 hover:text-white hover:border-zinc-700 transition">
+                        +
+                      </button>
+                    </form>
                   </div>
                 ))}
               </div>

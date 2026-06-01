@@ -495,6 +495,81 @@ function readLegacyStateFromWindow() {
   return raw ? parseLegacySnapshot(raw) : null;
 }
 
+type ProfileTheme = {
+  accent: string;
+  nameColor: string;
+  button: string;
+  outlineButton: string;
+  activeTab: string;
+  inputFocus: string;
+  badge: string;
+  borderLeft: string;
+  dot: string;
+  text: string;
+  lightBg: string;
+};
+
+const profileThemes: ProfileTheme[] = [
+  {
+    accent: "violet",
+    nameColor: "text-violet-400",
+    button: "bg-violet-600 hover:bg-violet-500 text-white shadow-[0_0_15px_rgba(139,92,246,0.3)]",
+    outlineButton: "border-violet-850/60 bg-violet-950/15 text-violet-400 hover:border-violet-700 hover:bg-violet-950/30",
+    activeTab: "border-violet-500 bg-violet-500/10 text-violet-300 font-bold",
+    inputFocus: "focus:border-violet-500/80 focus:ring-1 focus:ring-violet-500/20",
+    badge: "bg-violet-950/30 text-violet-400 border border-violet-850/35",
+    borderLeft: "border-l-2 border-l-violet-500/60",
+    dot: "bg-violet-400 shadow-[0_0_8px_rgba(167,139,250,0.7)]",
+    text: "text-violet-400",
+    lightBg: "bg-violet-950/5"
+  },
+  {
+    accent: "teal",
+    nameColor: "text-teal-400",
+    button: "bg-teal-600 hover:bg-teal-500 text-white shadow-[0_0_15px_rgba(20,184,166,0.3)]",
+    outlineButton: "border-teal-850/60 bg-teal-950/15 text-teal-400 hover:border-teal-700 hover:bg-teal-950/30",
+    activeTab: "border-teal-500 bg-teal-500/10 text-teal-300 font-bold",
+    inputFocus: "focus:border-teal-500/80 focus:ring-1 focus:ring-teal-500/20",
+    badge: "bg-teal-950/30 text-teal-400 border border-teal-850/35",
+    borderLeft: "border-l-2 border-l-teal-500/60",
+    dot: "bg-teal-400 shadow-[0_0_8px_rgba(45,212,191,0.7)]",
+    text: "text-teal-400",
+    lightBg: "bg-teal-950/5"
+  },
+  {
+    accent: "rose",
+    nameColor: "text-rose-400",
+    button: "bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.3)]",
+    outlineButton: "border-rose-850/60 bg-rose-950/15 text-rose-400 hover:border-rose-700 hover:bg-rose-950/30",
+    activeTab: "border-rose-500 bg-rose-500/10 text-rose-300 font-bold",
+    inputFocus: "focus:border-rose-500/80 focus:ring-1 focus:ring-rose-500/20",
+    badge: "bg-rose-950/30 text-rose-400 border border-rose-850/35",
+    borderLeft: "border-l-2 border-l-rose-500/60",
+    dot: "bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.7)]",
+    text: "text-rose-400",
+    lightBg: "bg-rose-950/5"
+  },
+  {
+    accent: "amber",
+    nameColor: "text-amber-400",
+    button: "bg-amber-600 hover:bg-amber-500 text-white shadow-[0_0_15px_rgba(245,158,11,0.3)]",
+    outlineButton: "border-amber-850/60 bg-amber-950/15 text-amber-400 hover:border-amber-700 hover:bg-amber-950/30",
+    activeTab: "border-amber-500 bg-amber-500/10 text-amber-300 font-bold",
+    inputFocus: "focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/20",
+    badge: "bg-amber-950/30 text-amber-400 border border-amber-850/35",
+    borderLeft: "border-l-2 border-l-amber-500/60",
+    dot: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.7)]",
+    text: "text-amber-400",
+    lightBg: "bg-amber-950/5"
+  }
+];
+
+function getProfileTheme(profileId: string, profilesList: Profile[]): ProfileTheme {
+  const index = profilesList.findIndex((p) => p.id === profileId);
+  const themeIndex = index >= 0 ? index % profileThemes.length : 0;
+  return profileThemes[themeIndex];
+}
+
 export default function Home() {
   const supabase = useMemo(() => createClient(), []);
   const [profiles, setProfiles] = useState<Profile[]>(starterProfiles);
@@ -665,6 +740,8 @@ export default function Home() {
     profiles.find((profile) => profile.id === compareProfileId) ||
     profiles.find((profile) => profile.id !== activeProfile.id) ||
     activeProfile;
+
+  const activeTheme = useMemo(() => getProfileTheme(activeProfile.id, profiles), [activeProfile.id, profiles]);
 
   const activeEntries = useMemo(
     () => entries.filter((entry) => entry.profileId === activeProfile.id),
@@ -1278,7 +1355,7 @@ export default function Home() {
             </h1>
           </div>
           <div className="grid grid-cols-3 gap-2 md:gap-3">
-            <Metric label="Active" value={activeProfile.name} />
+            <Metric label="Active" value={activeProfile.name} valueClassName={activeTheme.nameColor} />
             <Metric label="Sets" value={activeWorkoutEntries.length.toString()} />
             <Metric label="Volume" value={profileVolume(activeWorkoutEntries).toLocaleString()} />
           </div>
@@ -1345,36 +1422,40 @@ export default function Home() {
               Profiles
             </p>
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1.5 scrollbar-none">
-              {profiles.map((profile) => (
-                <div
-                  key={profile.id}
-                  className={`flex h-10 items-center overflow-hidden rounded-lg border transition ${
-                    profile.id === activeProfile.id
-                      ? "border-white bg-white text-black"
-                      : "border-zinc-800 text-zinc-300 hover:border-zinc-500"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setActiveProfileId(profile.id)}
-                    className="h-full px-4 text-sm font-semibold"
-                  >
-                    {profile.name}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void removeProfile(profile.id)}
-                    disabled={profiles.length <= 1}
-                    className={`h-full border-l px-3 text-xs font-semibold transition ${
-                      profile.id === activeProfile.id
-                        ? "border-zinc-300 text-zinc-600 hover:bg-zinc-200"
-                        : "border-zinc-800 text-zinc-500 hover:text-red-400 disabled:text-zinc-800"
+              {profiles.map((profile) => {
+                const pTheme = getProfileTheme(profile.id, profiles);
+                const isActive = profile.id === activeProfile.id;
+                return (
+                  <div
+                    key={profile.id}
+                    className={`flex h-10 items-center overflow-hidden rounded-lg border transition ${
+                      isActive
+                        ? `${pTheme.activeTab}`
+                        : "border-zinc-800 text-zinc-300 hover:border-zinc-500"
                     }`}
                   >
-                    Remove
-                  </button>
-                </div>
-              ))}
+                    <button
+                      type="button"
+                      onClick={() => setActiveProfileId(profile.id)}
+                      className="h-full px-4 text-sm font-semibold"
+                    >
+                      {profile.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void removeProfile(profile.id)}
+                      disabled={profiles.length <= 1}
+                      className={`h-full border-l px-3 text-xs font-semibold transition ${
+                        isActive
+                          ? "border-zinc-700/50 text-zinc-400 hover:bg-zinc-950/30"
+                          : "border-zinc-800 text-zinc-500 hover:text-red-400 disabled:text-zinc-800"
+                      }`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
           <form onSubmit={(event) => void addProfile(event)} className="flex gap-2">
@@ -1398,7 +1479,7 @@ export default function Home() {
               className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4"
             >
               <h2 className="text-base font-semibold text-white">
-                Add set for {activeProfile.name}
+                Add set for <span className={activeTheme.nameColor}>{activeProfile.name}</span>
               </h2>
               <div className="mt-4 grid gap-3.5">
                 <FieldLabel label="Date">
@@ -1406,14 +1487,14 @@ export default function Home() {
                     type="date"
                     value={date}
                     onChange={(event) => setDate(event.target.value)}
-                    className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80 focus:ring-1 focus:ring-violet-500/20`}
+                    className={`${inputClassName} bg-black/50 border-zinc-800/80 ${activeTheme.inputFocus}`}
                   />
                 </FieldLabel>
                 <FieldLabel label="Body part">
                   <select
                     value={bodyPart}
                     onChange={(event) => selectBodyPart(event.target.value)}
-                    className={`${selectClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                    className={`${selectClassName} bg-black/50 border-zinc-800/80 ${activeTheme.inputFocus}`}
                   >
                     {bodyParts.map((part) => (
                       <option key={part}>{part}</option>
@@ -1429,7 +1510,7 @@ export default function Home() {
                         setIsCustomExerciseMode(!isCustomExerciseMode);
                         setCustomExerciseName("");
                       }}
-                      className="text-xs font-semibold text-violet-400 hover:text-violet-300 transition"
+                      className={`text-xs font-semibold hover:opacity-80 transition ${activeTheme.text}`}
                     >
                       {isCustomExerciseMode ? "Choose Existing" : "+ Add Custom"}
                     </button>
@@ -1438,7 +1519,7 @@ export default function Home() {
                     <input
                       value={customExerciseName}
                       onChange={(event) => setCustomExerciseName(event.target.value)}
-                      className={`${inputClassName} w-full bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                      className={`${inputClassName} w-full bg-black/50 border-zinc-800/80 ${activeTheme.inputFocus}`}
                       placeholder="e.g., Incline Cable Fly"
                       required
                     />
@@ -1446,7 +1527,7 @@ export default function Home() {
                     <select
                       value={exercise}
                       onChange={(event) => setExercise(event.target.value)}
-                      className={`${selectClassName} w-full bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                      className={`${selectClassName} w-full bg-black/50 border-zinc-800/80 ${activeTheme.inputFocus}`}
                     >
                       {catalogExercises.map((catalogExercise) => (
                         <option key={catalogExercise}>{catalogExercise}</option>
@@ -1483,7 +1564,7 @@ export default function Home() {
                       step="0.5"
                       value={weight}
                       onChange={(event) => setWeight(event.target.value)}
-                      className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                      className={`${inputClassName} bg-black/50 border-zinc-800/80 ${activeTheme.inputFocus}`}
                     />
                   </FieldLabel>
                   <FieldLabel label="Reps">
@@ -1492,7 +1573,7 @@ export default function Home() {
                       min="0"
                       value={reps}
                       onChange={(event) => setReps(event.target.value)}
-                      className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                      className={`${inputClassName} bg-black/50 border-zinc-800/80 ${activeTheme.inputFocus}`}
                     />
                   </FieldLabel>
                 </div>
@@ -1500,7 +1581,7 @@ export default function Home() {
                   <input
                     value={note}
                     onChange={(event) => setNote(event.target.value)}
-                    className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                    className={`${inputClassName} bg-black/50 border-zinc-800/80 ${activeTheme.inputFocus}`}
                     placeholder="e.g., Felt strong, good speed"
                   />
                 </FieldLabel>
@@ -1534,7 +1615,7 @@ export default function Home() {
                             setReps(String(entry.reps));
                             setSetNumber(String(getSetOrder(entry, index)));
                           }}
-                          className="text-right text-xs font-semibold text-violet-400 transition hover:text-violet-300"
+                          className={`text-right text-xs font-semibold transition hover:opacity-85 ${activeTheme.text}`}
                         >
                           Use
                         </button>
@@ -1547,7 +1628,7 @@ export default function Home() {
                   )}
                 </div>
               </div>
-              <button className="mt-4 h-11 w-full rounded-lg bg-white px-4 text-sm font-semibold text-black transition hover:bg-zinc-200 hover:scale-[1.01] active:scale-[0.99] duration-150">
+              <button className={`mt-4 h-11 w-full rounded-lg px-4 text-sm font-semibold transition hover:scale-[1.01] active:scale-[0.99] duration-150 ${activeTheme.button}`}>
                 Add set
               </button>
             </form>
@@ -1560,14 +1641,14 @@ export default function Home() {
                     type="date"
                     value={date}
                     onChange={(event) => setDate(event.target.value)}
-                    className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                    className={`${inputClassName} bg-black/50 border-zinc-800/80 ${activeTheme.inputFocus}`}
                   />
                 </FieldLabel>
                 <FieldLabel label="Note">
                   <input
                     value={restNote}
                     onChange={(event) => setRestNote(event.target.value)}
-                    className={`${inputClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                    className={`${inputClassName} bg-black/50 border-zinc-800/80 ${activeTheme.inputFocus}`}
                     placeholder="Sleep, soreness, travel, etc."
                   />
                 </FieldLabel>
@@ -1575,7 +1656,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => void addRestDay()}
-                className="mt-4 h-11 w-full rounded-lg border border-zinc-700 px-4 text-sm font-semibold text-zinc-100 transition hover:border-zinc-400 hover:bg-zinc-900/50"
+                className={`mt-4 h-11 w-full rounded-lg border px-4 text-sm font-semibold transition hover:scale-[1.01] active:scale-[0.99] duration-150 ${activeTheme.outlineButton}`}
               >
                 Mark rest day
               </button>
@@ -1780,7 +1861,7 @@ export default function Home() {
                       </>
                     ) : (
                       <>
-                        <svg className="w-3.5 h-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <svg className={`w-3.5 h-3.5 ${activeTheme.text}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
                         </svg>
                         Copy for AI Summary
@@ -1849,6 +1930,7 @@ export default function Home() {
                               {day.groupedItems.map((item, itemIdx) => {
                                 if (item.kind === "rest" || item.kind === "single") {
                                   const entry = item.entry;
+                                  const entryTheme = getProfileTheme(entry.profileId, profiles);
                                   return (
                                     <div key={entry.id}>
                                       {editingEntry?.id === entry.id ? (
@@ -1971,13 +2053,13 @@ export default function Home() {
                                           </div>
                                         </article>
                                       ) : (
-                                        <article className="relative overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40 p-3.5 shadow-sm hover:border-zinc-800 transition">
+                                        <article className={`relative overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40 p-3.5 shadow-sm hover:border-zinc-800 transition ${entryTheme.borderLeft}`}>
                                           <div className="flex items-start justify-between gap-3">
                                             <div>
                                               <h4 className="font-semibold text-white text-[15px] leading-snug">{entry.exercise}</h4>
                                             </div>
                                             {entry.kind !== "rest" && (
-                                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-violet-950/20 text-violet-400 border border-violet-850/30 uppercase">
+                                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${entryTheme.badge}`}>
                                                 {entry.bodyPart}
                                               </span>
                                             )}
@@ -1987,8 +2069,8 @@ export default function Home() {
                                             <div className="flex items-center gap-5">
                                               <div>
                                                 <p className="text-[9px] uppercase tracking-wider text-zinc-650 font-bold">Logged By</p>
-                                                <span className="mt-0.5 inline-flex items-center text-xs font-semibold text-zinc-300">
-                                                  <svg className="w-3.5 h-3.5 mr-1 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <span className={`mt-0.5 inline-flex items-center text-xs font-semibold ${entryTheme.text}`}>
+                                                  <svg className="w-3.5 h-3.5 mr-1 text-zinc-550" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                                   </svg>
                                                   {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
@@ -2028,7 +2110,7 @@ export default function Home() {
 
                                           {entry.note && (
                                             <div className="mt-2.5 rounded-lg bg-zinc-950/70 border border-zinc-900 px-3 py-2 text-xs text-zinc-450 font-medium">
-                                              <span className="font-semibold text-zinc-550">Note: </span>
+                                              <span className="font-semibold text-zinc-555">Note: </span>
                                               {entry.note}
                                             </div>
                                           )}
@@ -2038,21 +2120,22 @@ export default function Home() {
                                   );
                                 } else {
                                   // It's a dropset!
+                                  const entryTheme = getProfileTheme(item.profileId, profiles);
                                   return (
                                     <div key={`${item.exercise}-${item.setNumber}`}>
-                                      <article className="relative overflow-hidden rounded-xl border border-violet-900/40 bg-zinc-950/40 p-4 shadow-sm hover:border-violet-800 transition">
+                                      <article className={`relative overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40 p-4 shadow-sm hover:border-zinc-800 transition ${entryTheme.borderLeft}`}>
                                         <div className="flex items-start justify-between gap-3">
                                           <div>
                                             <h4 className="font-semibold text-white text-[15px] leading-snug">{item.exercise}</h4>
-                                            <span className="mt-1.5 inline-flex items-center text-xs font-semibold text-zinc-300">
-                                              <svg className="w-3.5 h-3.5 mr-1 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <span className={`mt-1.5 inline-flex items-center text-xs font-semibold ${entryTheme.text}`}>
+                                              <svg className="w-3.5 h-3.5 mr-1 text-zinc-550" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                               </svg>
                                               {profiles.find((profile) => profile.id === item.profileId)?.name || "Unknown"}
                                             </span>
                                           </div>
                                           <div className="flex flex-col items-end gap-1">
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-violet-950/20 text-violet-400 border border-violet-850/30 uppercase">
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${entryTheme.badge}`}>
                                               {item.bodyPart}
                                             </span>
                                             <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold bg-fuchsia-950/30 text-fuchsia-400 border border-fuchsia-850/40 uppercase tracking-wider">
@@ -2206,6 +2289,7 @@ export default function Home() {
                                   {day.groupedItems.map((item, itemIdx) => {
                                     if (item.kind === "rest" || item.kind === "single") {
                                       const entry = item.entry;
+                                      const entryTheme = getProfileTheme(entry.profileId, profiles);
                                       return (
                                         <div
                                           key={entry.id}
@@ -2323,16 +2407,17 @@ export default function Home() {
                                       );
                                     } else {
                                       // It's a dropset!
+                                      const entryTheme = getProfileTheme(item.profileId, profiles);
                                       return (
                                         <div
                                           key={`${item.exercise}-${item.setNumber}`}
-                                          className="grid grid-cols-[110px_1fr_80px_70px_1fr_120px] gap-3 border-b border-zinc-900 px-4 py-2.5 text-sm text-zinc-200 last:border-b-0 items-start bg-violet-950/5"
+                                          className={`grid grid-cols-[110px_1fr_80px_70px_1fr_120px] gap-3 border-b border-zinc-900 px-4 py-2.5 text-sm text-zinc-200 last:border-b-0 items-start ${entryTheme.lightBg}`}
                                         >
-                                          <span className="truncate rounded-md border border-zinc-900 bg-black/40 px-2 py-0.5 text-xs font-semibold text-zinc-350 self-start flex items-center gap-1">
-                                            <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                          <span className={`truncate rounded-md px-2 py-0.5 text-xs font-semibold self-start flex items-center gap-1 ${entryTheme.badge}`}>
+                                            <svg className="w-3.5 h-3.5 text-zinc-550" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                               <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                             </svg>
-                                            {profiles.find((profile) => profile.id === item.profileId)?.name || "Unknown"}
+                                            {profiles.find((p) => p.id === item.profileId)?.name || "Unknown"}
                                           </span>
                                           <div className="flex flex-col gap-1 select-none">
                                             <span className="font-semibold text-white truncate flex items-center gap-2">
@@ -2476,11 +2561,9 @@ export default function Home() {
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full border border-zinc-850 bg-zinc-950/95 backdrop-blur-md px-4 py-2.5 text-[11px] font-semibold text-zinc-200 shadow-2xl shadow-black/80 border-t-zinc-800/40 animate-slide-up">
           <span className={`inline-flex h-2 w-2 rounded-full ${
-            toast.type === "success"
-              ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"
-              : toast.type === "error"
-                ? "bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.7)]"
-                : "bg-violet-400 shadow-[0_0_8px_rgba(167,139,250,0.7)]"
+            toast.type === "error"
+              ? "bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.7)]"
+              : activeTheme.dot
           }`} />
           {toast.message}
         </div>
@@ -2578,13 +2661,13 @@ function FieldLabel({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
   return (
     <div className="min-w-0 flex-1 rounded-md border border-zinc-900 bg-zinc-950 px-2.5 py-2 text-center sm:text-left">
       <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
         {label}
       </p>
-      <p className="mt-1 truncate text-lg sm:text-2xl font-semibold text-white">{value}</p>
+      <p className={`mt-1 truncate text-lg sm:text-2xl font-semibold ${valueClassName || "text-white"}`}>{value}</p>
     </div>
   );
 }

@@ -106,27 +106,32 @@ const exerciseCatalog = {
   Chest: [
     "Bench press",
     "Incline dumbbell press",
-    "Machine cable flies upper chest",
-    "Machine cable flies lower chest",
+    "Cable flyes upper chest",
+    "Cable flyes lower chest",
   ],
   Triceps: [
-    "Cable extensions",
+    "Cable tricep extensions",
     "Overhead cable extensions",
     "Single arm cable extensions",
   ],
-  Back: ["Lat pulldowns", "Lying dumbbell rows", "Lat prayers", "Seated rowing"],
+  Back: [
+    "Lat pulldowns",
+    "Chest-supported dumbbell rows",
+    "Lat prayers",
+    "Seated cable rows",
+  ],
   Biceps: [
     "Seated dumbbell curls",
     "Standing barbell curls",
-    "Incline barbell curls",
+    "Preacher curls",
     "Incline dumbbell curls",
     "Dumbbell hammer curls",
     "Cable bicep curls",
   ],
   Shoulders: [
-    "Dumbbell press",
-    "Lateral raises with dumbbells",
-    "Lateral raises with cables",
+    "Dumbbell shoulder press",
+    "Dumbbell lateral raises",
+    "Cable lateral raises",
     "Reverse pec deck",
     "Face pulls",
   ],
@@ -515,6 +520,64 @@ export default function Home() {
   const [customExercises, setCustomExercises] = useState<Record<string, string[]>>({});
   const [isCustomExerciseMode, setIsCustomExerciseMode] = useState(false);
   const [customExerciseName, setCustomExerciseName] = useState("");
+
+  const [confirmConfig, setConfirmConfig] = useState<{
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    isDanger?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  function copyAISummary() {
+    const profileName = activeProfile.name;
+    let summaryText = `WORKOUT TRACKER HISTORY FOR ${profileName.toUpperCase()}\n`;
+    summaryText += `==========================================\n\n`;
+
+    if (groupedEntriesByDate.length === 0) {
+      summaryText += "No workouts logged yet.";
+    } else {
+      groupedEntriesByDate.forEach((day) => {
+        const dayLabel = day.isRest ? "Rest Day" : `${day.bodyParts.join(" & ")} Day`;
+        summaryText += `- ${day.date} [${dayLabel}]\n`;
+        if (day.isRest) {
+          summaryText += `  * Rest: ${day.restNote || "Recovery"}\n`;
+        } else {
+          const exerciseMap: Record<string, WorkoutEntry[]> = {};
+          day.entries.forEach((e) => {
+            if (e.kind === "workout") {
+              if (!exerciseMap[e.exercise]) {
+                exerciseMap[e.exercise] = [];
+              }
+              exerciseMap[e.exercise].push(e);
+            }
+          });
+
+          Object.keys(exerciseMap).forEach((exName) => {
+            const sets = exerciseMap[exName];
+            const setsText = sets
+              .map((s, idx) => {
+                const setNum = getSetOrder(s, idx);
+                const details = s.weight ? `${s.weight}kg x ${s.reps} reps` : `${s.reps} reps`;
+                const notePart = s.note ? ` (${s.note})` : "";
+                return `Set ${setNum}: ${details}${notePart}`;
+              })
+              .join(", ");
+            summaryText += `  * ${exName}: ${setsText}\n`;
+          });
+        }
+        summaryText += `\n`;
+      });
+    }
+
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(summaryText);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    }
+  }
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -929,49 +992,51 @@ export default function Home() {
     }
 
     const profileName = profiles.find((p) => p.id === profileId)?.name || "this user";
-    const confirmed = window.confirm(
-      `Are you sure you want to remove "${profileName}" and all of their logged workouts and rest days? This action cannot be undone.`
-    );
-    if (!confirmed) {
-      return;
-    }
+    
+    setConfirmConfig({
+      title: "Remove Profile",
+      message: `Are you sure you want to remove "${profileName}" and all of their logged workouts and rest days? This action cannot be undone.`,
+      isDanger: true,
+      confirmText: "Remove Profile",
+      onConfirm: async () => {
+        const { error: deleteRestError } = await supabase
+          .from("rest_days")
+          .delete()
+          .eq("profile_id", profileId);
+        if (deleteRestError) {
+          setError(deleteRestError.message);
+          return;
+        }
 
-    const { error: deleteRestError } = await supabase
-      .from("rest_days")
-      .delete()
-      .eq("profile_id", profileId);
-    if (deleteRestError) {
-      setError(deleteRestError.message);
-      return;
-    }
+        const { error: deleteWorkoutError } = await supabase
+          .from("workout_sets")
+          .delete()
+          .eq("profile_id", profileId);
+        if (deleteWorkoutError) {
+          setError(deleteWorkoutError.message);
+          return;
+        }
 
-    const { error: deleteWorkoutError } = await supabase
-      .from("workout_sets")
-      .delete()
-      .eq("profile_id", profileId);
-    if (deleteWorkoutError) {
-      setError(deleteWorkoutError.message);
-      return;
-    }
+        const { error: deleteProfileError } = await supabase
+          .from("profiles")
+          .delete()
+          .eq("id", profileId);
+        if (deleteProfileError) {
+          setError(deleteProfileError.message);
+          return;
+        }
 
-    const { error: deleteProfileError } = await supabase
-      .from("profiles")
-      .delete()
-      .eq("id", profileId);
-    if (deleteProfileError) {
-      setError(deleteProfileError.message);
-      return;
-    }
+        if (activeProfile.id === profileId) {
+          setActiveProfileId(profiles.find((profile) => profile.id !== profileId)?.id || DEFAULT_PROFILE_ID);
+        }
+        if (compareProfile.id === profileId) {
+          setCompareProfileId(profiles.find((profile) => profile.id !== profileId)?.id || DEFAULT_PROFILE_ID);
+        }
 
-    if (activeProfile.id === profileId) {
-      setActiveProfileId(profiles.find((profile) => profile.id !== profileId)?.id || DEFAULT_PROFILE_ID);
-    }
-    if (compareProfile.id === profileId) {
-      setCompareProfileId(profiles.find((profile) => profile.id !== profileId)?.id || DEFAULT_PROFILE_ID);
-    }
-
-    setSelectedExercise("All");
-    refreshAfterMutation();
+        setSelectedExercise("All");
+        refreshAfterMutation();
+      }
+    });
   }
 
   async function addWorkout(event: FormEvent<HTMLFormElement>) {
@@ -1038,74 +1103,49 @@ export default function Home() {
     refreshAfterMutation();
   }
 
-  async function importQuickNotes() {
-    const importedEntries = parseWorkoutNotes(
-      quickNotes,
-      date,
-      activeProfile.id,
-      bodyPart,
-      fullExerciseCatalog,
-    );
-    const workoutRows = importedEntries.map((entry) => ({
-      id: entry.id,
-      profile_id: entry.profileId,
-      body_part: entry.bodyPart,
-      exercise: entry.exercise,
-      weight: entry.weight,
-      reps: entry.reps,
-      note: entry.note,
-      workout_date: entry.date,
-    }));
-
-    if (!workoutRows.length) {
-      return;
-    }
-
-    const { error: insertError } = await supabase.from("workout_sets").insert(workoutRows);
-    if (insertError) {
-      setError(insertError.message);
-      return;
-    }
-
-    setQuickNotes("");
-    refreshAfterMutation();
-  }
-
   async function deleteEntry(entry: Entry) {
     const isRest = entry.kind === "rest";
     const label = isRest ? "rest day" : `${entry.exercise} set`;
-    const confirmed = window.confirm(`Are you sure you want to delete this ${label}?`);
-    if (!confirmed) {
-      return;
-    }
-
-    const table = isRest ? "rest_days" : "workout_sets";
-    const { error } = await supabase.from(table).delete().eq("id", entry.id);
-    if (error) {
-      setError(error.message);
-      return;
-    }
-    refreshAfterMutation();
+    
+    setConfirmConfig({
+      title: "Delete Entry",
+      message: `Are you sure you want to delete this ${label}? This action cannot be undone.`,
+      isDanger: true,
+      confirmText: "Delete",
+      onConfirm: async () => {
+        const table = isRest ? "rest_days" : "workout_sets";
+        const { error } = await supabase.from(table).delete().eq("id", entry.id);
+        if (error) {
+          setError(error.message);
+          return;
+        }
+        refreshAfterMutation();
+      }
+    });
   }
 
   function startEditingEntry(entry: Entry) {
     const isRest = entry.kind === "rest";
     const label = isRest ? "rest day" : `${entry.exercise} set`;
-    const confirmed = window.confirm(`Are you sure you want to edit this ${label}?`);
-    if (!confirmed) {
-      return;
-    }
 
-    setEditingEntry({
-      id: entry.id,
-      kind: entry.kind,
-      profileId: entry.profileId,
-      bodyPart: entry.bodyPart,
-      date: entry.date,
-      exercise: entry.exercise,
-      weight: String(entry.weight),
-      reps: String(entry.reps),
-      note: entry.note,
+    setConfirmConfig({
+      title: "Edit Entry",
+      message: `Are you sure you want to edit this ${label}?`,
+      isDanger: false,
+      confirmText: "Edit",
+      onConfirm: () => {
+        setEditingEntry({
+          id: entry.id,
+          kind: entry.kind,
+          profileId: entry.profileId,
+          bodyPart: entry.bodyPart,
+          date: entry.date,
+          exercise: entry.exercise,
+          weight: String(entry.weight),
+          reps: String(entry.reps),
+          note: entry.note,
+        });
+      }
     });
   }
 
@@ -1523,25 +1563,7 @@ export default function Home() {
               </button>
             </section>
 
-            <section className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4">
-              <h2 className="text-base font-semibold text-white">Paste notes</h2>
-              <textarea
-                value={quickNotes}
-                onChange={(event) => setQuickNotes(event.target.value)}
-                className="mt-4 min-h-36 w-full resize-y rounded-lg border border-zinc-800 bg-black/50 p-3 text-xs leading-5 text-zinc-200 outline-none transition placeholder:text-zinc-700 focus:border-zinc-500"
-                placeholder={`20 *12 1st set smith machine squats
-25* 7 2nd
-25 *8 3 rd
-20 *12 1 set leg press`}
-              />
-              <button
-                type="button"
-                onClick={() => void importQuickNotes()}
-                className="mt-3 h-11 w-full rounded-lg border border-zinc-700 px-4 text-sm font-semibold text-zinc-100 transition hover:border-zinc-400 hover:bg-zinc-900/50"
-              >
-                Import notes
-              </button>
-            </section>
+            {/* Paste notes section removed */}
 
             <section className="rounded-xl border border-zinc-900 bg-zinc-950/20 p-4">
               <h2 className="text-base font-semibold text-white">Exercise list</h2>
@@ -1718,13 +1740,40 @@ export default function Home() {
                        {/* Collapsible History Logs Grouped by Date */}
             <div className={`space-y-4 lg:block ${mobileTab === "history" ? "block" : "hidden"}`}>
               <div className="flex flex-col gap-3 rounded-xl border border-zinc-900 bg-zinc-950/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-base font-semibold text-white">
-                  {activeProfile.name} log
-                </h2>
+                <div className="flex items-center gap-3 justify-between sm:justify-start w-full sm:w-auto">
+                  <h2 className="text-base font-semibold text-white">
+                    {activeProfile.name} log
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={copyAISummary}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                      copySuccess
+                        ? "bg-emerald-950/20 border-emerald-800/40 text-emerald-400"
+                        : "bg-zinc-900/30 border-zinc-800/80 text-zinc-300 hover:border-zinc-650 hover:bg-zinc-900/60"
+                    }`}
+                  >
+                    {copySuccess ? (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3.5 h-3.5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                        </svg>
+                        Copy for AI Summary
+                      </>
+                    )}
+                  </button>
+                </div>
                 <select
                   value={selectedExercise}
                   onChange={(event) => setSelectedExercise(event.target.value)}
-                  className={`${selectClassName} bg-black border-zinc-900 focus:border-zinc-500`}
+                  className={`${selectClassName} bg-black border-zinc-900 focus:border-zinc-550`}
                 >
                   <option>All</option>
                   {exercises.map((name) => (
@@ -2371,6 +2420,39 @@ export default function Home() {
           </section>
         </div>
       </section>
+
+      {/* Premium Glassmorphic Confirmation Modal Overlay */}
+      {confirmConfig && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-950/95 p-5 shadow-2xl shadow-black/80">
+            <h3 className="text-base font-semibold text-white">{confirmConfig.title}</h3>
+            <p className="mt-2 text-xs text-zinc-450">{confirmConfig.message}</p>
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmConfig(null)}
+                className="h-9 flex-1 rounded-lg border border-zinc-800 bg-black/40 px-3 text-xs font-semibold text-zinc-450 hover:border-zinc-650 hover:text-white transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  confirmConfig.onConfirm();
+                  setConfirmConfig(null);
+                }}
+                className={`h-9 flex-1 rounded-lg px-3 text-xs font-semibold transition ${
+                  confirmConfig.isDanger
+                    ? "bg-red-950/20 text-red-400 border border-red-800/40 hover:bg-red-900/40 hover:text-red-300"
+                    : "bg-white text-black hover:bg-zinc-200"
+                }`}
+              >
+                {confirmConfig.confirmText || "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

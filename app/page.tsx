@@ -784,7 +784,7 @@ export default function Home() {
       const legacy = readLegacyStateFromWindow();
       const sourceProfiles = legacy?.profiles || starterProfiles;
       const sourceEntries = legacy
-        ? legacyToEntries(legacy, fullExerciseCatalog)
+        ? legacyToEntries(legacy, exerciseCatalog)
         : { workoutEntries: starterWorkoutEntries, restEntries: [] };
 
       const profilesToInsert = sourceProfiles.map((profile) => ({
@@ -843,7 +843,7 @@ export default function Home() {
       profiles: nextProfiles.length ? nextProfiles : starterProfiles,
       entries: sortEntries(nextEntries.length ? nextEntries : starterWorkoutEntries),
     };
-  }, [supabase, fullExerciseCatalog]);
+  }, [supabase]);
 
   useEffect(() => {
     let cancelled = false;

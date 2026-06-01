@@ -413,6 +413,72 @@ function getSetOrder(entry: WorkoutEntry, index: number) {
   return match ? Number(match[1]) : index + 1;
 }
 
+type GroupedItem =
+  | { kind: "rest"; entry: RestEntry }
+  | { kind: "single"; entry: WorkoutEntry }
+  | {
+      kind: "dropset";
+      exercise: string;
+      setNumber: number;
+      entries: WorkoutEntry[];
+      bodyPart: string;
+      profileId: string;
+    };
+
+function groupDateEntries(dateEntries: Entry[]): GroupedItem[] {
+  const restEntries = dateEntries.filter(isRestEntry) as RestEntry[];
+  const workoutEntries = dateEntries.filter((e) => !isRestEntry(e)) as WorkoutEntry[];
+
+  // Group workout entries by profileId + exercise + setNumber
+  const groups: Record<string, WorkoutEntry[]> = {};
+  workoutEntries.forEach((entry, idx) => {
+    const setNum = getSetOrder(entry, idx);
+    const key = `${entry.profileId}|${entry.exercise}|${setNum}`;
+    if (!groups[key]) {
+      groups[key] = [];
+    }
+    groups[key].push(entry);
+  });
+
+  const items: GroupedItem[] = [];
+
+  // Add rest entries first to match the existing display
+  restEntries.forEach((entry) => {
+    items.push({ kind: "rest", entry });
+  });
+
+  // To preserve original order, scan workout entries and add their corresponding group
+  const seenKeys = new Set<string>();
+  workoutEntries.forEach((entry, idx) => {
+    const setNum = getSetOrder(entry, idx);
+    const key = `${entry.profileId}|${entry.exercise}|${setNum}`;
+    if (seenKeys.has(key)) {
+      return;
+    }
+    seenKeys.add(key);
+
+    const groupEntries = groups[key];
+    if (groupEntries.length > 1) {
+      items.push({
+        kind: "dropset",
+        exercise: entry.exercise,
+        setNumber: setNum,
+        entries: groupEntries,
+        bodyPart: entry.bodyPart,
+        profileId: entry.profileId,
+      });
+    } else {
+      items.push({
+        kind: "single",
+        entry: groupEntries[0],
+      });
+    }
+  });
+
+  return items;
+}
+
+
 function readLegacyStateFromWindow() {
   if (typeof window === "undefined") {
     return null;
@@ -447,6 +513,8 @@ export default function Home() {
   const [editingEntry, setEditingEntry] = useState<EditingEntryDraft | null>(null);
 
   const [customExercises, setCustomExercises] = useState<Record<string, string[]>>({});
+  const [isCustomExerciseMode, setIsCustomExerciseMode] = useState(false);
+  const [customExerciseName, setCustomExerciseName] = useState("");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -461,16 +529,37 @@ export default function Home() {
     }
   }, []);
 
+  const discoveredCustomExercises = useMemo(() => {
+    const discovered: Record<string, string[]> = {};
+    entries.forEach((entry) => {
+      if (entry.kind === "workout") {
+        const cat = exerciseCatalog[entry.bodyPart as keyof typeof exerciseCatalog];
+        if (cat && !(cat as readonly string[]).includes(entry.exercise)) {
+          if (!discovered[entry.bodyPart]) {
+            discovered[entry.bodyPart] = [];
+          }
+          if (!discovered[entry.bodyPart].includes(entry.exercise)) {
+            discovered[entry.bodyPart].push(entry.exercise);
+          }
+        }
+      }
+    });
+    return discovered;
+  }, [entries]);
+
   const fullExerciseCatalog = useMemo(() => {
     const combined: Record<string, string[]> = {};
     Object.keys(exerciseCatalog).forEach((key) => {
+      const discovered = discoveredCustomExercises[key] || [];
+      const local = customExercises[key] || [];
+      const uniqueCustom = Array.from(new Set([...local, ...discovered]));
       combined[key] = [
         ...exerciseCatalog[key as keyof typeof exerciseCatalog],
-        ...(customExercises[key] || []),
+        ...uniqueCustom,
       ];
     });
     return combined;
-  }, [customExercises]);
+  }, [customExercises, discoveredCustomExercises]);
 
   function addCustomExercise(bodyPart: string, name: string) {
     const cleanName = name.trim();
@@ -569,7 +658,21 @@ export default function Home() {
         bodyPartsList = ["Rest"];
       } else {
         bodyPartsList = Array.from(new Set(dateEntries.map((e) => e.bodyPart)));
+        const hasTriceps = bodyPartsList.some((bp) => bp.toLowerCase() === "triceps");
+        const hasBiceps = bodyPartsList.some((bp) => bp.toLowerCase() === "biceps");
+        if (hasTriceps && hasBiceps) {
+          bodyPartsList = bodyPartsList.map((bp) => {
+            const lower = bp.toLowerCase();
+            if (lower === "triceps" || lower === "biceps") {
+              return "Arm";
+            }
+            return bp;
+          });
+          bodyPartsList = Array.from(new Set(bodyPartsList));
+        }
       }
+
+      const groupedItems = groupDateEntries(dateEntries);
 
       return {
         date,
@@ -577,6 +680,7 @@ export default function Home() {
         restNote,
         bodyParts: bodyPartsList,
         entries: dateEntries,
+        groupedItems,
       };
     });
   }, [filteredEntries]);
@@ -872,14 +976,15 @@ export default function Home() {
 
   async function addWorkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!exercise.trim()) {
+    const exerciseName = isCustomExerciseMode ? customExerciseName.trim() : exercise.trim();
+    if (!exerciseName) {
       return;
     }
 
     const entry = makeWorkoutEntry(
       activeProfile.id,
       bodyPart,
-      exercise.trim(),
+      exerciseName,
       Number(weight),
       Number(reps),
       buildSetNote(setNumber, note),
@@ -900,6 +1005,12 @@ export default function Home() {
     if (insertError) {
       setError(insertError.message);
       return;
+    }
+
+    if (isCustomExerciseMode) {
+      addCustomExercise(bodyPart, exerciseName);
+      setIsCustomExerciseMode(false);
+      setCustomExerciseName("");
     }
 
     setNote("");
@@ -961,7 +1072,14 @@ export default function Home() {
   }
 
   async function deleteEntry(entry: Entry) {
-    const table = entry.kind === "rest" ? "rest_days" : "workout_sets";
+    const isRest = entry.kind === "rest";
+    const label = isRest ? "rest day" : `${entry.exercise} set`;
+    const confirmed = window.confirm(`Are you sure you want to delete this ${label}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    const table = isRest ? "rest_days" : "workout_sets";
     const { error } = await supabase.from(table).delete().eq("id", entry.id);
     if (error) {
       setError(error.message);
@@ -971,6 +1089,13 @@ export default function Home() {
   }
 
   function startEditingEntry(entry: Entry) {
+    const isRest = entry.kind === "rest";
+    const label = isRest ? "rest day" : `${entry.exercise} set`;
+    const confirmed = window.confirm(`Are you sure you want to edit this ${label}?`);
+    if (!confirmed) {
+      return;
+    }
+
     setEditingEntry({
       id: entry.id,
       kind: entry.kind,
@@ -1237,17 +1362,40 @@ export default function Home() {
                     ))}
                   </select>
                 </FieldLabel>
-                <FieldLabel label="Exercise">
-                  <select
-                    value={exercise}
-                    onChange={(event) => setExercise(event.target.value)}
-                    className={`${selectClassName} bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
-                  >
-                    {catalogExercises.map((catalogExercise) => (
-                      <option key={catalogExercise}>{catalogExercise}</option>
-                    ))}
-                  </select>
-                </FieldLabel>
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">Exercise</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomExerciseMode(!isCustomExerciseMode);
+                        setCustomExerciseName("");
+                      }}
+                      className="text-xs font-semibold text-violet-400 hover:text-violet-300 transition"
+                    >
+                      {isCustomExerciseMode ? "Choose Existing" : "+ Add Custom"}
+                    </button>
+                  </div>
+                  {isCustomExerciseMode ? (
+                    <input
+                      value={customExerciseName}
+                      onChange={(event) => setCustomExerciseName(event.target.value)}
+                      className={`${inputClassName} w-full bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                      placeholder="e.g., Incline Cable Fly"
+                      required
+                    />
+                  ) : (
+                    <select
+                      value={exercise}
+                      onChange={(event) => setExercise(event.target.value)}
+                      className={`${selectClassName} w-full bg-black/50 border-zinc-800/80 focus:border-violet-500/80`}
+                    >
+                      {catalogExercises.map((catalogExercise) => (
+                        <option key={catalogExercise}>{catalogExercise}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
                 <div>
                   <p className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
                     Set number
@@ -1631,193 +1779,349 @@ export default function Home() {
                             
                             {/* Mobile View: Exercise Cards inside Expanded Day */}
                             <div className="block md:hidden space-y-3">
-                              {day.entries.map((entry) => (
-                                <div key={entry.id}>
-                                  {editingEntry?.id === entry.id ? (
-                                    <article className="rounded-xl border border-white/80 bg-zinc-950 p-4 shadow-lg space-y-3">
-                                      <div className="grid grid-cols-2 gap-2">
-                                        <FieldLabel label="Date">
-                                          <input
-                                            type="date"
-                                            value={editingEntry.date}
-                                            onChange={(event) =>
-                                              updateEditingEntry("date", event.target.value)
-                                            }
-                                            className={compactInputClassName}
-                                          />
-                                        </FieldLabel>
-                                        <FieldLabel label="Person">
-                                          <select
-                                            value={editingEntry.profileId}
-                                            onChange={(event) =>
-                                              updateEditingEntry("profileId", event.target.value)
-                                            }
-                                            className={compactSelectClassName}
-                                          >
-                                            {profiles.map((profile) => (
-                                              <option key={profile.id} value={profile.id}>
-                                                {profile.name}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </FieldLabel>
-                                      </div>
+                              {day.groupedItems.map((item, itemIdx) => {
+                                if (item.kind === "rest" || item.kind === "single") {
+                                  const entry = item.entry;
+                                  return (
+                                    <div key={entry.id}>
+                                      {editingEntry?.id === entry.id ? (
+                                        <article className="rounded-xl border border-white/80 bg-zinc-950 p-4 shadow-lg space-y-3">
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <FieldLabel label="Date">
+                                              <input
+                                                type="date"
+                                                value={editingEntry.date}
+                                                onChange={(event) =>
+                                                  updateEditingEntry("date", event.target.value)
+                                                }
+                                                className={compactInputClassName}
+                                              />
+                                            </FieldLabel>
+                                            <FieldLabel label="Person">
+                                              <select
+                                                value={editingEntry.profileId}
+                                                onChange={(event) =>
+                                                  updateEditingEntry("profileId", event.target.value)
+                                                }
+                                                className={compactSelectClassName}
+                                              >
+                                                {profiles.map((profile) => (
+                                                  <option key={profile.id} value={profile.id}>
+                                                    {profile.name}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </FieldLabel>
+                                          </div>
 
-                                      <div className="grid grid-cols-2 gap-2">
-                                        <FieldLabel label="Body part">
-                                          <select
-                                            value={editingEntry.bodyPart}
-                                            onChange={(event) =>
-                                              updateEditingEntry("bodyPart", event.target.value)
-                                            }
-                                            className={compactSelectClassName}
-                                          >
-                                            {editableBodyParts.map((part) => (
-                                              <option key={part}>{part}</option>
-                                            ))}
-                                          </select>
-                                        </FieldLabel>
-                                        <FieldLabel label="Exercise">
-                                          {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
-                                            <input value="Rest day" readOnly className={compactInputClassName} />
-                                          ) : (
-                                            <select
-                                              value={editingEntry.exercise}
-                                              onChange={(event) =>
-                                                updateEditingEntry("exercise", event.target.value)
-                                              }
-                                              className={compactSelectClassName}
-                                            >
-                                              {(fullExerciseCatalog[editingEntry.bodyPart] || []).map((catalogExercise) => (
-                                                <option key={catalogExercise}>{catalogExercise}</option>
-                                              ))}
-                                            </select>
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <FieldLabel label="Body part">
+                                              <select
+                                                value={editingEntry.bodyPart}
+                                                onChange={(event) =>
+                                                  updateEditingEntry("bodyPart", event.target.value)
+                                                }
+                                                className={compactSelectClassName}
+                                              >
+                                                {editableBodyParts.map((part) => (
+                                                  <option key={part}>{part}</option>
+                                                ))}
+                                              </select>
+                                            </FieldLabel>
+                                            <FieldLabel label="Exercise">
+                                              {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
+                                                <input value="Rest day" readOnly className={compactInputClassName} />
+                                              ) : (
+                                                <select
+                                                  value={editingEntry.exercise}
+                                                  onChange={(event) =>
+                                                    updateEditingEntry("exercise", event.target.value)
+                                                  }
+                                                  className={compactSelectClassName}
+                                                >
+                                                  {(fullExerciseCatalog[editingEntry.bodyPart] || []).map((catalogExercise) => (
+                                                    <option key={catalogExercise}>{catalogExercise}</option>
+                                                  ))}
+                                                </select>
+                                              )}
+                                            </FieldLabel>
+                                          </div>
+
+                                          {editingEntry.kind !== "rest" && editingEntry.bodyPart !== "Rest" && (
+                                            <div className="grid grid-cols-2 gap-2">
+                                              <FieldLabel label="Weight">
+                                                <input
+                                                  type="number"
+                                                  min="0"
+                                                  step="0.5"
+                                                  value={editingEntry.weight}
+                                                  onChange={(event) =>
+                                                    updateEditingEntry("weight", event.target.value)
+                                                  }
+                                                  className={compactInputClassName}
+                                                />
+                                              </FieldLabel>
+                                              <FieldLabel label="Reps">
+                                                <input
+                                                  type="number"
+                                                  min="0"
+                                                  value={editingEntry.reps}
+                                                  onChange={(event) =>
+                                                    updateEditingEntry("reps", event.target.value)
+                                                  }
+                                                  className={compactInputClassName}
+                                                />
+                                              </FieldLabel>
+                                            </div>
                                           )}
-                                        </FieldLabel>
-                                      </div>
 
-                                      {editingEntry.kind !== "rest" && editingEntry.bodyPart !== "Rest" && (
-                                        <div className="grid grid-cols-2 gap-2">
-                                          <FieldLabel label="Weight">
+                                          <FieldLabel label="Note">
                                             <input
-                                              type="number"
-                                              min="0"
-                                              step="0.5"
-                                              value={editingEntry.weight}
+                                              value={editingEntry.note}
                                               onChange={(event) =>
-                                                updateEditingEntry("weight", event.target.value)
+                                                updateEditingEntry("note", event.target.value)
                                               }
                                               className={compactInputClassName}
+                                              placeholder="Note"
                                             />
                                           </FieldLabel>
-                                          <FieldLabel label="Reps">
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              value={editingEntry.reps}
-                                              onChange={(event) =>
-                                                updateEditingEntry("reps", event.target.value)
-                                              }
-                                              className={compactInputClassName}
-                                            />
-                                          </FieldLabel>
-                                        </div>
+
+                                          <div className="flex gap-2 pt-2 border-t border-zinc-900">
+                                            <button
+                                              type="button"
+                                              onClick={() => void saveEditingEntry()}
+                                              className="h-9 flex-1 rounded-lg bg-white px-3 text-xs font-semibold text-black transition hover:bg-zinc-200"
+                                            >
+                                              Save
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setEditingEntry(null)}
+                                              className="h-9 flex-1 rounded-lg border border-zinc-800 px-3 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        </article>
+                                      ) : (
+                                        <article className="relative overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40 p-3.5 shadow-sm hover:border-zinc-800 transition">
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                              <h4 className="font-semibold text-white text-[15px] leading-snug">{entry.exercise}</h4>
+                                            </div>
+                                            {entry.kind !== "rest" && (
+                                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-violet-950/20 text-violet-400 border border-violet-850/30 uppercase">
+                                                {entry.bodyPart}
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          <div className="mt-3 flex items-center justify-between gap-4 border-t border-zinc-900 pt-2.5">
+                                            <div className="flex items-center gap-5">
+                                              <div>
+                                                <p className="text-[9px] uppercase tracking-wider text-zinc-650 font-bold">Logged By</p>
+                                                <span className="mt-0.5 inline-flex items-center text-xs font-semibold text-zinc-300">
+                                                  <svg className="w-3.5 h-3.5 mr-1 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                  </svg>
+                                                  {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
+                                                </span>
+                                              </div>
+                                              {entry.kind !== "rest" && (
+                                                <>
+                                                  <div>
+                                                    <p className="text-[9px] uppercase tracking-wider text-zinc-650 font-bold">Weight</p>
+                                                    <p className="mt-0.5 text-xs font-bold text-white">{entry.weight ? `${entry.weight} kg` : "-"}</p>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-[9px] uppercase tracking-wider text-zinc-650 font-bold">Reps</p>
+                                                    <p className="mt-0.5 text-xs font-bold text-white">{entry.reps || "-"}</p>
+                                                  </div>
+                                                </>
+                                              )}
+                                            </div>
+
+                                            <div className="flex gap-1.5">
+                                              <button
+                                                type="button"
+                                                onClick={() => startEditingEntry(entry)}
+                                                className="h-8 rounded-lg border border-zinc-900 bg-black px-3 text-xs font-semibold text-zinc-300 transition hover:border-zinc-700 hover:text-white"
+                                              >
+                                                Edit
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => void deleteEntry(entry)}
+                                                className="h-8 rounded-lg border border-zinc-900 bg-black px-2.5 text-xs font-semibold text-zinc-550 transition hover:border-red-900/50 hover:text-red-400"
+                                              >
+                                                Del
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {entry.note && (
+                                            <div className="mt-2.5 rounded-lg bg-zinc-950/70 border border-zinc-900 px-3 py-2 text-xs text-zinc-450 font-medium">
+                                              <span className="font-semibold text-zinc-550">Note: </span>
+                                              {entry.note}
+                                            </div>
+                                          )}
+                                        </article>
                                       )}
-
-                                      <FieldLabel label="Note">
-                                        <input
-                                          value={editingEntry.note}
-                                          onChange={(event) =>
-                                            updateEditingEntry("note", event.target.value)
-                                          }
-                                          className={compactInputClassName}
-                                          placeholder="Note"
-                                        />
-                                      </FieldLabel>
-
-                                      <div className="flex gap-2 pt-2 border-t border-zinc-900">
-                                        <button
-                                          type="button"
-                                          onClick={() => void saveEditingEntry()}
-                                          className="h-9 flex-1 rounded-lg bg-white px-3 text-xs font-semibold text-black transition hover:bg-zinc-200"
-                                        >
-                                          Save
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setEditingEntry(null)}
-                                          className="h-9 flex-1 rounded-lg border border-zinc-800 px-3 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
-                                        >
-                                          Cancel
-                                        </button>
-                                      </div>
-                                    </article>
-                                  ) : (
-                                    <article className="relative overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40 p-3.5 shadow-sm hover:border-zinc-800 transition">
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div>
-                                          <h4 className="font-semibold text-white text-[15px] leading-snug">{entry.exercise}</h4>
-                                        </div>
-                                        {entry.kind !== "rest" && (
-                                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-violet-950/20 text-violet-400 border border-violet-850/30 uppercase">
-                                            {entry.bodyPart}
-                                          </span>
-                                        )}
-                                      </div>
-
-                                      <div className="mt-3 flex items-center justify-between gap-4 border-t border-zinc-900 pt-2.5">
-                                        <div className="flex items-center gap-5">
+                                    </div>
+                                  );
+                                } else {
+                                  // It's a dropset!
+                                  return (
+                                    <div key={`${item.exercise}-${item.setNumber}`}>
+                                      <article className="relative overflow-hidden rounded-xl border border-violet-900/40 bg-zinc-950/40 p-4 shadow-sm hover:border-violet-800 transition">
+                                        <div className="flex items-start justify-between gap-3">
                                           <div>
-                                            <p className="text-[9px] uppercase tracking-wider text-zinc-650 font-bold">Logged By</p>
-                                            <span className="mt-0.5 inline-flex items-center text-xs font-semibold text-zinc-300">
+                                            <h4 className="font-semibold text-white text-[15px] leading-snug">{item.exercise}</h4>
+                                            <span className="mt-1.5 inline-flex items-center text-xs font-semibold text-zinc-300">
                                               <svg className="w-3.5 h-3.5 mr-1 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                               </svg>
-                                              {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
+                                              {profiles.find((profile) => profile.id === item.profileId)?.name || "Unknown"}
                                             </span>
                                           </div>
-                                          {entry.kind !== "rest" && (
-                                            <>
-                                              <div>
-                                                <p className="text-[9px] uppercase tracking-wider text-zinc-650 font-bold">Weight</p>
-                                                <p className="mt-0.5 text-xs font-bold text-white">{entry.weight ? `${entry.weight} kg` : "-"}</p>
-                                              </div>
-                                              <div>
-                                                <p className="text-[9px] uppercase tracking-wider text-zinc-650 font-bold">Reps</p>
-                                                <p className="mt-0.5 text-xs font-bold text-white">{entry.reps || "-"}</p>
-                                              </div>
-                                            </>
-                                          )}
+                                          <div className="flex flex-col items-end gap-1">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-violet-950/20 text-violet-400 border border-violet-850/30 uppercase">
+                                              {item.bodyPart}
+                                            </span>
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold bg-fuchsia-950/30 text-fuchsia-400 border border-fuchsia-850/40 uppercase tracking-wider">
+                                              ⚡ Drop Set (Set {item.setNumber})
+                                            </span>
+                                          </div>
                                         </div>
 
-                                        <div className="flex gap-1.5">
-                                          <button
-                                            type="button"
-                                            onClick={() => startEditingEntry(entry)}
-                                            className="h-8 rounded-lg border border-zinc-900 bg-black px-3 text-xs font-semibold text-zinc-300 transition hover:border-zinc-700 hover:text-white"
-                                          >
-                                            Edit
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => void deleteEntry(entry)}
-                                            className="h-8 rounded-lg border border-zinc-900 bg-black px-2.5 text-xs font-semibold text-zinc-550 transition hover:border-red-900/50 hover:text-red-400"
-                                          >
-                                            Del
-                                          </button>
-                                        </div>
-                                      </div>
+                                        <div className="mt-4 space-y-3 border-t border-zinc-900 pt-3">
+                                          {item.entries.map((entry, subIdx) => (
+                                            <div key={entry.id} className="rounded-lg bg-black/40 border border-zinc-900/60 p-2.5">
+                                              {editingEntry?.id === entry.id ? (
+                                                <div className="space-y-3">
+                                                  <div className="grid grid-cols-2 gap-2">
+                                                    <FieldLabel label="Date">
+                                                      <input
+                                                        type="date"
+                                                        value={editingEntry.date}
+                                                        onChange={(event) =>
+                                                          updateEditingEntry("date", event.target.value)
+                                                        }
+                                                        className={compactInputClassName}
+                                                      />
+                                                    </FieldLabel>
+                                                    <FieldLabel label="Person">
+                                                      <select
+                                                        value={editingEntry.profileId}
+                                                        onChange={(event) =>
+                                                          updateEditingEntry("profileId", event.target.value)
+                                                        }
+                                                        className={compactSelectClassName}
+                                                      >
+                                                        {profiles.map((profile) => (
+                                                          <option key={profile.id} value={profile.id}>
+                                                            {profile.name}
+                                                          </option>
+                                                        ))}
+                                                      </select>
+                                                    </FieldLabel>
+                                                  </div>
 
-                                      {entry.note && (
-                                        <div className="mt-2.5 rounded-lg bg-zinc-950/70 border border-zinc-900 px-3 py-2 text-xs text-zinc-450 font-medium">
-                                          <span className="font-semibold text-zinc-550">Note: </span>
-                                          {entry.note}
+                                                  <div className="grid grid-cols-2 gap-2">
+                                                    <FieldLabel label="Weight">
+                                                      <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.5"
+                                                        value={editingEntry.weight}
+                                                        onChange={(event) =>
+                                                          updateEditingEntry("weight", event.target.value)
+                                                        }
+                                                        className={compactInputClassName}
+                                                      />
+                                                    </FieldLabel>
+                                                    <FieldLabel label="Reps">
+                                                      <input
+                                                        type="number"
+                                                        min="0"
+                                                        value={editingEntry.reps}
+                                                        onChange={(event) =>
+                                                          updateEditingEntry("reps", event.target.value)
+                                                        }
+                                                        className={compactInputClassName}
+                                                      />
+                                                    </FieldLabel>
+                                                  </div>
+
+                                                  <FieldLabel label="Note">
+                                                    <input
+                                                      value={editingEntry.note}
+                                                      onChange={(event) =>
+                                                        updateEditingEntry("note", event.target.value)
+                                                      }
+                                                      className={compactInputClassName}
+                                                      placeholder="Note"
+                                                    />
+                                                  </FieldLabel>
+
+                                                  <div className="flex gap-2 pt-2 border-t border-zinc-900">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => void saveEditingEntry()}
+                                                      className="h-9 flex-1 rounded-lg bg-white px-3 text-xs font-semibold text-black transition hover:bg-zinc-200"
+                                                    >
+                                                      Save
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => setEditingEntry(null)}
+                                                      className="h-9 flex-1 rounded-lg border border-zinc-800 px-3 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
+                                                    >
+                                                      Cancel
+                                                    </button>
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                <div className="flex items-center justify-between gap-3">
+                                                  <div className="flex items-center gap-4">
+                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Sub {subIdx + 1}</span>
+                                                    <div>
+                                                      <span className="text-xs font-bold text-white">{entry.weight ? `${entry.weight} kg` : "-"}</span>
+                                                      <span className="mx-1.5 text-zinc-600">x</span>
+                                                      <span className="text-xs font-bold text-white">{entry.reps || "-"}</span>
+                                                    </div>
+                                                  </div>
+                                                  <div className="flex items-center gap-1.5">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => startEditingEntry(entry)}
+                                                      className="h-7 rounded border border-zinc-900 bg-black px-2 text-[11px] font-semibold text-zinc-300 hover:border-zinc-700 hover:text-white"
+                                                    >
+                                                      Edit
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => void deleteEntry(entry)}
+                                                      className="h-7 rounded border border-zinc-900 bg-black px-2 text-[11px] font-semibold text-zinc-555 hover:border-red-900/50 hover:text-red-400"
+                                                    >
+                                                      Del
+                                                    </button>
+                                                  </div>
+                                                </div>
+                                              )}
+                                              {entry.note && !editingEntry && (
+                                                <div className="mt-1.5 rounded bg-zinc-950/65 border border-zinc-900 px-2 py-1 text-[10px] text-zinc-400 font-medium">
+                                                  Note: {entry.note}
+                                                </div>
+                                              )}
+                                            </div>
+                                          ))}
                                         </div>
-                                      )}
-                                    </article>
-                                  )}
-                                </div>
-                              ))}
+                                      </article>
+                                    </div>
+                                  );
+                                }
+                              })}
                             </div>
 
                             {/* Desktop View: Sub-Table inside Expanded Day */}
@@ -1832,121 +2136,226 @@ export default function Home() {
                                     <span>Note</span>
                                     <span>Actions</span>
                                   </div>
-                                  {day.entries.map((entry) => (
-                                    <div
-                                      key={entry.id}
-                                      className="grid grid-cols-[110px_1fr_80px_70px_1fr_120px] gap-3 border-b border-zinc-900 px-4 py-2.5 text-sm text-zinc-200 last:border-b-0"
-                                    >
-                                      {editingEntry?.id === entry.id ? (
-                                        <>
-                                          <select
-                                            value={editingEntry.profileId}
-                                            onChange={(event) =>
-                                              updateEditingEntry("profileId", event.target.value)
-                                            }
-                                            className={compactSelectClassName}
-                                          >
-                                            {profiles.map((profile) => (
-                                              <option key={profile.id} value={profile.id}>
-                                                {profile.name}
-                                              </option>
-                                            ))}
-                                          </select>
-                                          {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
-                                            <input value="Rest day" readOnly className={compactInputClassName} />
+                                  {day.groupedItems.map((item, itemIdx) => {
+                                    if (item.kind === "rest" || item.kind === "single") {
+                                      const entry = item.entry;
+                                      return (
+                                        <div
+                                          key={entry.id}
+                                          className="grid grid-cols-[110px_1fr_80px_70px_1fr_120px] gap-3 border-b border-zinc-900 px-4 py-2.5 text-sm text-zinc-200 last:border-b-0"
+                                        >
+                                          {editingEntry?.id === entry.id ? (
+                                            <>
+                                              <select
+                                                value={editingEntry.profileId}
+                                                onChange={(event) =>
+                                                  updateEditingEntry("profileId", event.target.value)
+                                                }
+                                                className={compactSelectClassName}
+                                              >
+                                                {profiles.map((profile) => (
+                                                  <option key={profile.id} value={profile.id}>
+                                                    {profile.name}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                              {editingEntry.kind === "rest" || editingEntry.bodyPart === "Rest" ? (
+                                                <input value="Rest day" readOnly className={compactInputClassName} />
+                                              ) : (
+                                                <select
+                                                  value={editingEntry.exercise}
+                                                  onChange={(event) =>
+                                                    updateEditingEntry("exercise", event.target.value)
+                                                  }
+                                                  className={compactSelectClassName}
+                                                >
+                                                  {(fullExerciseCatalog[editingEntry.bodyPart] || []).map((catalogExercise) => (
+                                                    <option key={catalogExercise}>{catalogExercise}</option>
+                                                  ))}
+                                                </select>
+                                              )}
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                step="0.5"
+                                                value={editingEntry.weight}
+                                                onChange={(event) =>
+                                                  updateEditingEntry("weight", event.target.value)
+                                                }
+                                                className={compactInputClassName}
+                                                disabled={editingEntry.kind === "rest"}
+                                              />
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                value={editingEntry.reps}
+                                                onChange={(event) =>
+                                                  updateEditingEntry("reps", event.target.value)
+                                                }
+                                                className={compactInputClassName}
+                                                disabled={editingEntry.kind === "rest"}
+                                              />
+                                              <input
+                                                value={editingEntry.note}
+                                                onChange={(event) =>
+                                                  updateEditingEntry("note", event.target.value)
+                                                }
+                                                className={compactInputClassName}
+                                                placeholder="Note"
+                                              />
+                                              <div className="flex gap-2">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => void saveEditingEntry()}
+                                                  className="h-8 flex-1 rounded-md bg-white px-2 text-xs font-semibold text-black transition hover:bg-zinc-200"
+                                                >
+                                                  Save
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setEditingEntry(null)}
+                                                  className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
+                                                >
+                                                  Cancel
+                                                </button>
+                                              </div>
+                                            </>
                                           ) : (
-                                            <select
-                                              value={editingEntry.exercise}
-                                              onChange={(event) =>
-                                                updateEditingEntry("exercise", event.target.value)
-                                              }
-                                              className={compactSelectClassName}
-                                            >
-                                              {(fullExerciseCatalog[editingEntry.bodyPart] || []).map((catalogExercise) => (
-                                                <option key={catalogExercise}>{catalogExercise}</option>
-                                              ))}
-                                            </select>
+                                            <>
+                                              <span className="truncate rounded-md border border-zinc-900 bg-black/40 px-2 py-0.5 text-xs font-semibold text-zinc-350 self-start flex items-center gap-1">
+                                                <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                </svg>
+                                                {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
+                                              </span>
+                                              <span className="font-semibold text-white truncate">
+                                                {entry.exercise}
+                                              </span>
+                                              <span className="font-bold text-zinc-100">{entry.kind !== "rest" && entry.weight ? `${entry.weight} kg` : "-"}</span>
+                                              <span className="font-bold text-zinc-150">{entry.kind !== "rest" && entry.reps ? entry.reps : "-"}</span>
+                                              <span className="text-zinc-500 truncate">{entry.note || "-"}</span>
+                                              <div className="flex gap-2">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => startEditingEntry(entry)}
+                                                  className="h-8 flex-1 rounded-md border border-zinc-900 bg-black px-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-700 hover:text-white"
+                                                >
+                                                  Edit
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => void deleteEntry(entry)}
+                                                  className="h-8 flex-1 rounded-md border border-zinc-900 bg-black px-2 text-xs font-semibold text-zinc-500 transition hover:border-red-950 hover:text-red-400"
+                                                >
+                                                  Del
+                                                </button>
+                                              </div>
+                                            </>
                                           )}
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            step="0.5"
-                                            value={editingEntry.weight}
-                                            onChange={(event) =>
-                                              updateEditingEntry("weight", event.target.value)
-                                            }
-                                            className={compactInputClassName}
-                                            disabled={editingEntry.kind === "rest"}
-                                          />
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            value={editingEntry.reps}
-                                            onChange={(event) =>
-                                              updateEditingEntry("reps", event.target.value)
-                                            }
-                                            className={compactInputClassName}
-                                            disabled={editingEntry.kind === "rest"}
-                                          />
-                                          <input
-                                            value={editingEntry.note}
-                                            onChange={(event) =>
-                                              updateEditingEntry("note", event.target.value)
-                                            }
-                                            className={compactInputClassName}
-                                            placeholder="Note"
-                                          />
-                                          <div className="flex gap-2">
-                                            <button
-                                              type="button"
-                                              onClick={() => void saveEditingEntry()}
-                                              className="h-8 flex-1 rounded-md bg-white px-2 text-xs font-semibold text-black transition hover:bg-zinc-200"
-                                            >
-                                              Save
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => setEditingEntry(null)}
-                                              className="h-8 flex-1 rounded-md border border-zinc-800 px-2 text-xs font-semibold text-zinc-400 transition hover:border-zinc-500"
-                                            >
-                                              Cancel
-                                            </button>
-                                          </div>
-                                        </>
-                                      ) : (
-                                        <>
+                                        </div>
+                                      );
+                                    } else {
+                                      // It's a dropset!
+                                      return (
+                                        <div
+                                          key={`${item.exercise}-${item.setNumber}`}
+                                          className="grid grid-cols-[110px_1fr_80px_70px_1fr_120px] gap-3 border-b border-zinc-900 px-4 py-2.5 text-sm text-zinc-200 last:border-b-0 items-start bg-violet-950/5"
+                                        >
                                           <span className="truncate rounded-md border border-zinc-900 bg-black/40 px-2 py-0.5 text-xs font-semibold text-zinc-350 self-start flex items-center gap-1">
                                             <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                               <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                             </svg>
-                                            {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
+                                            {profiles.find((profile) => profile.id === item.profileId)?.name || "Unknown"}
                                           </span>
-                                          <span className="font-semibold text-white truncate">
-                                            {entry.exercise}
-                                          </span>
-                                          <span className="font-bold text-zinc-100">{entry.kind !== "rest" && entry.weight ? `${entry.weight} kg` : "-"}</span>
-                                          <span className="font-bold text-zinc-150">{entry.kind !== "rest" && entry.reps ? entry.reps : "-"}</span>
-                                          <span className="text-zinc-500 truncate">{entry.note || "-"}</span>
-                                          <div className="flex gap-2">
-                                            <button
-                                              type="button"
-                                              onClick={() => startEditingEntry(entry)}
-                                              className="h-8 flex-1 rounded-md border border-zinc-900 bg-black px-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-700 hover:text-white"
-                                            >
-                                              Edit
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => void deleteEntry(entry)}
-                                              className="h-8 flex-1 rounded-md border border-zinc-900 bg-black px-2 text-xs font-semibold text-zinc-500 transition hover:border-red-950 hover:text-red-400"
-                                            >
-                                              Del
-                                            </button>
+                                          <div className="flex flex-col gap-1 select-none">
+                                            <span className="font-semibold text-white truncate flex items-center gap-2">
+                                              {item.exercise}
+                                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-fuchsia-950/40 text-fuchsia-400 border border-fuchsia-800/30 uppercase tracking-wide">
+                                                ⚡ Drop Set (Set {item.setNumber})
+                                              </span>
+                                            </span>
+                                            <span className="text-[10px] text-zinc-500 font-semibold uppercase">{item.bodyPart}</span>
                                           </div>
-                                        </>
-                                      )}
-                                    </div>
-                                  ))}
+                                          
+                                          <div className="col-span-4 grid gap-2">
+                                            {item.entries.map((entry, subIdx) => (
+                                              <div key={entry.id} className="grid grid-cols-[80px_70px_1fr_120px] gap-3 items-center">
+                                                {editingEntry?.id === entry.id ? (
+                                                  <>
+                                                    <input
+                                                      type="number"
+                                                      min="0"
+                                                      step="0.5"
+                                                      value={editingEntry.weight}
+                                                      onChange={(event) =>
+                                                        updateEditingEntry("weight", event.target.value)
+                                                      }
+                                                      className={compactInputClassName}
+                                                    />
+                                                    <input
+                                                      type="number"
+                                                      min="0"
+                                                      value={editingEntry.reps}
+                                                      onChange={(event) =>
+                                                        updateEditingEntry("reps", event.target.value)
+                                                      }
+                                                      className={compactInputClassName}
+                                                    />
+                                                    <input
+                                                      value={editingEntry.note}
+                                                      onChange={(event) =>
+                                                        updateEditingEntry("note", event.target.value)
+                                                      }
+                                                      className={compactInputClassName}
+                                                      placeholder="Note"
+                                                    />
+                                                    <div className="flex gap-1.5">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => void saveEditingEntry()}
+                                                        className="h-8 flex-1 rounded bg-white text-[11px] font-semibold text-black hover:bg-zinc-200"
+                                                      >
+                                                        Save
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => setEditingEntry(null)}
+                                                        className="h-8 flex-1 rounded border border-zinc-800 text-[11px] font-semibold text-zinc-400 hover:border-zinc-555"
+                                                      >
+                                                        Cancel
+                                                      </button>
+                                                    </div>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <span className="font-bold text-zinc-100">{entry.weight ? `${entry.weight} kg` : "-"}</span>
+                                                    <span className="font-bold text-zinc-150">{entry.reps || "-"}</span>
+                                                    <span className="text-zinc-500 truncate">{entry.note || "-"}</span>
+                                                    <div className="flex gap-2">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => startEditingEntry(entry)}
+                                                        className="h-8 flex-1 rounded-md border border-zinc-900 bg-black px-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-700 hover:text-white"
+                                                      >
+                                                        Edit
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => void deleteEntry(entry)}
+                                                        className="h-8 flex-1 rounded-md border border-zinc-900 bg-black px-2 text-xs font-semibold text-zinc-550 transition hover:border-red-950 hover:text-red-400"
+                                                      >
+                                                        Del
+                                                      </button>
+                                                    </div>
+                                                  </>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                  })}
                                 </div>
                               </div>
                             </div>

@@ -529,7 +529,20 @@ export default function Home() {
     isDanger?: boolean;
     onConfirm: () => void;
   } | null>(null);
-  const [copySuccess, setCopySuccess] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "info" | "error" } | null>(null);
+
+  function showToast(message: string, type: "success" | "info" | "error" = "success") {
+    setToast({ message, type });
+  }
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  const copySuccess = toast?.message === "Workout history copied for AI!";
 
   function copyAISummary() {
     const profileName = activeProfile.name;
@@ -574,8 +587,7 @@ export default function Home() {
 
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       void navigator.clipboard.writeText(summaryText);
-      setCopySuccess(true);
-      setTimeout(() => setCopySuccess(false), 2000);
+      showToast("Workout history copied for AI!", "success");
     }
   }
 
@@ -984,6 +996,7 @@ export default function Home() {
     setActiveProfileId(profile.id);
     setNewProfileName("");
     refreshAfterMutation();
+    showToast(`Profile "${name}" created!`, "success");
   }
 
   async function removeProfile(profileId: string) {
@@ -1035,6 +1048,7 @@ export default function Home() {
 
         setSelectedExercise("All");
         refreshAfterMutation();
+        showToast("Profile removed!", "info");
       }
     });
   }
@@ -1080,6 +1094,7 @@ export default function Home() {
 
     setNote("");
     refreshAfterMutation();
+    showToast("Set logged successfully!", "success");
   }
 
   async function addRestDay() {
@@ -1101,6 +1116,7 @@ export default function Home() {
 
     setRestNote("");
     refreshAfterMutation();
+    showToast("Rest day marked!", "info");
   }
 
   async function deleteEntry(entry: Entry) {
@@ -1120,6 +1136,7 @@ export default function Home() {
           return;
         }
         refreshAfterMutation();
+        showToast("Set deleted successfully!", "info");
       }
     });
   }
@@ -1235,6 +1252,7 @@ export default function Home() {
 
     setEditingEntry(null);
     refreshAfterMutation();
+    showToast("Set updated successfully!", "success");
   }
 
   if (loading) {
@@ -1248,7 +1266,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-black text-zinc-100">
+    <main className="min-h-screen w-full overflow-x-hidden bg-black text-zinc-100">
       <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <header className="flex flex-col gap-5 border-b border-zinc-900 pb-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
@@ -1326,7 +1344,7 @@ export default function Home() {
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
               Profiles
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1.5 scrollbar-none">
               {profiles.map((profile) => (
                 <div
                   key={profile.id}
@@ -2453,6 +2471,45 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Premium Sleek Custom Slide-Up Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full border border-zinc-850 bg-zinc-950/95 backdrop-blur-md px-4 py-2.5 text-[11px] font-semibold text-zinc-200 shadow-2xl shadow-black/80 border-t-zinc-800/40 animate-slide-up">
+          <span className={`inline-flex h-2 w-2 rounded-full ${
+            toast.type === "success"
+              ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]"
+              : toast.type === "error"
+                ? "bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.7)]"
+                : "bg-violet-400 shadow-[0_0_8px_rgba(167,139,250,0.7)]"
+          }`} />
+          {toast.message}
+        </div>
+      )}
+
+      {/* Inline styles for custom premium transitions and scroll bar adjustments */}
+      <style>{`
+        .scrollbar-none::-webkit-scrollbar {
+          display: none;
+        }
+        .scrollbar-none {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        @keyframes slideUp {
+          from { transform: translate(-50%, 20px); opacity: 0; }
+          to { transform: translate(-50%, 0); opacity: 1; }
+        }
+        .animate-slide-up {
+          animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .animate-fade-in {
+          animation: fadeIn 0.15s ease-out forwards;
+        }
+      `}</style>
     </main>
   );
 }
@@ -2523,11 +2580,11 @@ function FieldLabel({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-24 rounded-md border border-zinc-900 bg-zinc-950 px-3 py-2">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-600">
+    <div className="min-w-0 flex-1 rounded-md border border-zinc-900 bg-zinc-950 px-2.5 py-2 text-center sm:text-left">
+      <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
         {label}
       </p>
-      <p className="mt-1 truncate text-2xl font-semibold text-white">{value}</p>
+      <p className="mt-1 truncate text-lg sm:text-2xl font-semibold text-white">{value}</p>
     </div>
   );
 }

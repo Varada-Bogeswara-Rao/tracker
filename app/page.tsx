@@ -46,6 +46,7 @@ type EditingEntryDraft = {
   weight: string;
   reps: string;
   note: string;
+  createdAt: string;
 };
 
 type ExerciseProgress = {
@@ -227,6 +228,17 @@ function buildSetNote(setNumber: string, note: string) {
 
 function isRestEntry(entry: Entry) {
   return entry.kind === "rest";
+}
+
+function formatEntryTime(createdAtString: string): string {
+  if (!createdAtString) return "";
+  try {
+    const date = new Date(createdAtString);
+    if (isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch {
+    return "";
+  }
 }
 
 function estimateOneRepMax(weight: number, reps: number) {
@@ -633,24 +645,34 @@ export default function Home() {
         if (day.isRest) {
           summaryText += `  * Rest: ${day.restNote || "Recovery"}\n`;
         } else {
+          // Sort workout entries chronologically (oldest first)
+          const workoutEntries = day.entries
+            .filter((e): e is WorkoutEntry => e.kind === "workout")
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
           const exerciseMap: Record<string, WorkoutEntry[]> = {};
-          day.entries.forEach((e) => {
-            if (e.kind === "workout") {
-              if (!exerciseMap[e.exercise]) {
-                exerciseMap[e.exercise] = [];
-              }
-              exerciseMap[e.exercise].push(e);
+          const exerciseOrder: string[] = [];
+
+          workoutEntries.forEach((e) => {
+            if (!exerciseMap[e.exercise]) {
+              exerciseMap[e.exercise] = [];
+              exerciseOrder.push(e.exercise);
             }
+            exerciseMap[e.exercise].push(e);
           });
 
-          Object.keys(exerciseMap).forEach((exName) => {
+          exerciseOrder.forEach((exName) => {
             const sets = exerciseMap[exName];
+            // Sort sets chronologically
+            sets.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
             const setsText = sets
               .map((s, idx) => {
                 const setNum = getSetOrder(s, idx);
                 const details = s.weight ? `${s.weight}kg x ${s.reps} reps` : `${s.reps} reps`;
                 const notePart = s.note ? ` (${s.note})` : "";
-                return `Set ${setNum}: ${details}${notePart}`;
+                const timeStr = formatEntryTime(s.createdAt);
+                const timePart = timeStr ? ` (${timeStr})` : "";
+                return `Set ${setNum}${timePart}: ${details}${notePart}`;
               })
               .join(", ");
             summaryText += `  * ${exName}: ${setsText}\n`;
@@ -953,6 +975,7 @@ export default function Home() {
         reps: entry.reps,
         note: entry.note,
         workout_date: entry.date,
+        created_at: entry.createdAt,
       }));
 
       const restRowsToInsert = sourceEntries.restEntries.map((entry) => ({
@@ -960,6 +983,7 @@ export default function Home() {
         profile_id: entry.profileId,
         rest_date: entry.date,
         note: entry.note,
+        created_at: entry.createdAt,
       }));
 
       const insertProfiles = await supabase.from("profiles").upsert(profilesToInsert, {
@@ -1156,6 +1180,7 @@ export default function Home() {
       reps: entry.reps,
       note: entry.note,
       workout_date: entry.date,
+      created_at: entry.createdAt,
     });
 
     if (insertError) {
@@ -1182,6 +1207,7 @@ export default function Home() {
       profile_id: entry.profileId,
       rest_date: entry.date,
       note: entry.note,
+      created_at: entry.createdAt,
     }, {
       onConflict: "profile_id,rest_date"
     });
@@ -1238,6 +1264,7 @@ export default function Home() {
           weight: String(entry.weight),
           reps: String(entry.reps),
           note: entry.note,
+          createdAt: entry.createdAt,
         });
       }
     });
@@ -1289,6 +1316,7 @@ export default function Home() {
         profile_id: editingEntry.profileId,
         rest_date: editingEntry.date,
         note: editingEntry.note.trim() || "Recovery",
+        created_at: editingEntry.createdAt,
       };
 
       const deleteWorkout = await supabase.from("workout_sets").delete().eq("id", editingEntry.id);
@@ -1312,6 +1340,7 @@ export default function Home() {
         reps: Number(editingEntry.reps),
         note: editingEntry.note.trim(),
         workout_date: editingEntry.date,
+        created_at: editingEntry.createdAt,
       };
 
       const deleteRest = await supabase.from("rest_days").delete().eq("id", editingEntry.id);
@@ -2056,7 +2085,14 @@ export default function Home() {
                                         <article className={`relative overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40 p-3.5 shadow-sm hover:border-zinc-800 transition ${entryTheme.borderLeft}`}>
                                           <div className="flex items-start justify-between gap-3">
                                             <div>
-                                              <h4 className="font-semibold text-white text-[15px] leading-snug">{entry.exercise}</h4>
+                                              <h4 className="font-semibold text-white text-[15px] leading-snug flex items-center gap-2">
+                                                {entry.exercise}
+                                                {entry.createdAt && (
+                                                  <span className="text-[10px] text-zinc-500 font-normal">
+                                                    {formatEntryTime(entry.createdAt)}
+                                                  </span>
+                                                )}
+                                              </h4>
                                             </div>
                                             {entry.kind !== "rest" && (
                                               <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${entryTheme.badge}`}>
@@ -2126,7 +2162,14 @@ export default function Home() {
                                       <article className={`relative overflow-hidden rounded-xl border border-zinc-900 bg-zinc-950/40 p-4 shadow-sm hover:border-zinc-800 transition ${entryTheme.borderLeft}`}>
                                         <div className="flex items-start justify-between gap-3">
                                           <div>
-                                            <h4 className="font-semibold text-white text-[15px] leading-snug">{item.exercise}</h4>
+                                            <h4 className="font-semibold text-white text-[15px] leading-snug flex items-center gap-2">
+                                              {item.exercise}
+                                              {item.entries[0]?.createdAt && (
+                                                <span className="text-[10px] text-zinc-500 font-normal">
+                                                  {formatEntryTime(item.entries[0].createdAt)}
+                                                </span>
+                                              )}
+                                            </h4>
                                             <span className={`mt-1.5 inline-flex items-center text-xs font-semibold ${entryTheme.text}`}>
                                               <svg className="w-3.5 h-3.5 mr-1 text-zinc-550" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -2234,7 +2277,14 @@ export default function Home() {
                                               ) : (
                                                 <div className="flex items-center justify-between gap-3">
                                                   <div className="flex items-center gap-4">
-                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Sub {subIdx + 1}</span>
+                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                      Sub {subIdx + 1}
+                                                      {entry.createdAt && (
+                                                        <span className="text-[9px] text-zinc-650 font-normal normal-case">
+                                                          {formatEntryTime(entry.createdAt)}
+                                                        </span>
+                                                      )}
+                                                    </span>
                                                     <div>
                                                       <span className="text-xs font-bold text-white">{entry.weight ? `${entry.weight} kg` : "-"}</span>
                                                       <span className="mx-1.5 text-zinc-600">x</span>
@@ -2379,8 +2429,13 @@ export default function Home() {
                                                 </svg>
                                                 {profiles.find((profile) => profile.id === entry.profileId)?.name || "Unknown"}
                                               </span>
-                                              <span className="font-semibold text-white truncate">
+                                              <span className="font-semibold text-white truncate flex items-center gap-2">
                                                 {entry.exercise}
+                                                {entry.createdAt && (
+                                                  <span className="text-[10px] text-zinc-550 font-normal">
+                                                    {formatEntryTime(entry.createdAt)}
+                                                  </span>
+                                                )}
                                               </span>
                                               <span className="font-bold text-zinc-100">{entry.kind !== "rest" && entry.weight ? `${entry.weight} kg` : "-"}</span>
                                               <span className="font-bold text-zinc-150">{entry.kind !== "rest" && entry.reps ? entry.reps : "-"}</span>
@@ -2422,6 +2477,11 @@ export default function Home() {
                                           <div className="flex flex-col gap-1 select-none">
                                             <span className="font-semibold text-white truncate flex items-center gap-2">
                                               {item.exercise}
+                                              {item.entries[0]?.createdAt && (
+                                                <span className="text-[10px] text-zinc-550 font-normal">
+                                                  {formatEntryTime(item.entries[0].createdAt)}
+                                                </span>
+                                              )}
                                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-fuchsia-950/40 text-fuchsia-400 border border-fuchsia-800/30 uppercase tracking-wide">
                                                 ⚡ Drop Set (Set {item.setNumber})
                                               </span>

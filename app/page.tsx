@@ -896,6 +896,28 @@ export default function Home() {
       .sort((a, b) => getSetOrder(a, 0) - getSetOrder(b, 0));
   }, [activeWorkoutEntries, exercise]);
 
+  const personalRecordsPerSet = useMemo(() => {
+    const records: Record<number, { weight: number; reps: number; date: string }> = {};
+
+    activeWorkoutEntries.forEach((entry, index) => {
+      if (entry.exercise !== exercise) return;
+      const setNum = getSetOrder(entry, index);
+      const weight = entry.weight;
+      const reps = entry.reps;
+
+      const currentBest = records[setNum];
+      if (
+        !currentBest ||
+        weight > currentBest.weight ||
+        (weight === currentBest.weight && reps > currentBest.reps)
+      ) {
+        records[setNum] = { weight, reps, date: entry.date };
+      }
+    });
+
+    return records;
+  }, [activeWorkoutEntries, exercise]);
+
   const comparisonRows = useMemo(() => {
     const leftProgress = getExerciseProgress(activeWorkoutEntries);
     const rightProgress = getExerciseProgress(compareWorkoutEntries);
@@ -1154,12 +1176,24 @@ export default function Home() {
     });
   }
 
-  async function addWorkout(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function addWorkout(event: FormEvent<HTMLFormElement> | React.MouseEvent<HTMLButtonElement>, isDropSet = false) {
+    if (event) {
+      event.preventDefault();
+    }
     const exerciseName = isCustomExerciseMode ? customExerciseName.trim() : exercise.trim();
     if (!exerciseName) {
       return;
     }
+
+    let targetSetNumber = setNumber;
+    if (isDropSet) {
+      const currentNum = parseInt(setNumber, 10);
+      if (!isNaN(currentNum) && currentNum > 1) {
+        targetSetNumber = String(currentNum - 1);
+      }
+    }
+
+    const baseNote = isDropSet ? (note.trim() ? `${note.trim()} - Drop Set` : "Drop Set") : note;
 
     const entry = makeWorkoutEntry(
       activeProfile.id,
@@ -1167,7 +1201,7 @@ export default function Home() {
       exerciseName,
       Number(weight),
       Number(reps),
-      buildSetNote(setNumber, note),
+      buildSetNote(targetSetNumber, baseNote),
       date,
     );
 
@@ -1195,8 +1229,16 @@ export default function Home() {
     }
 
     setNote("");
+
+    if (!isDropSet) {
+      const currentNum = parseInt(setNumber, 10);
+      if (!isNaN(currentNum)) {
+        setSetNumber(String(currentNum + 1));
+      }
+    }
+
     refreshAfterMutation();
-    showToast("Set logged successfully!", "success");
+    showToast(isDropSet ? "Drop set logged!" : "Set logged successfully!", "success");
   }
 
   async function addRestDay() {
@@ -1626,30 +1668,60 @@ export default function Home() {
                 </div>
                 <div className="mt-3 grid gap-2">
                   {previousExerciseEntries.length ? (
-                    previousExerciseEntries.map((entry, index) => (
-                      <div
-                        key={entry.id}
-                        className="grid grid-cols-[56px_1fr_48px] gap-2 rounded-lg border border-zinc-850 bg-zinc-900/10 px-3 py-2 text-xs"
-                      >
-                        <span className="text-zinc-500">
-                          Set {getSetOrder(entry, index)}
-                        </span>
-                        <span className="font-semibold text-zinc-200">
-                          {entry.weight || "-"} kg x {entry.reps || "-"}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setWeight(String(entry.weight));
-                            setReps(String(entry.reps));
-                            setSetNumber(String(getSetOrder(entry, index)));
-                          }}
-                          className={`text-right text-xs font-semibold transition hover:opacity-85 ${activeTheme.text}`}
+                    previousExerciseEntries.map((entry, index) => {
+                      const setNum = getSetOrder(entry, index);
+                      const pr = personalRecordsPerSet[setNum];
+                      return (
+                        <div
+                          key={entry.id}
+                          className="flex flex-col gap-2 rounded-lg border border-zinc-850 bg-zinc-900/10 p-2.5 text-xs"
                         >
-                          Use
-                        </button>
-                      </div>
-                    ))
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-zinc-500 font-medium">Set {setNum}</span>
+                              <span className="font-semibold text-zinc-200">
+                                {entry.weight || "-"} kg x {entry.reps || "-"}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setWeight(String(entry.weight));
+                                setReps(String(entry.reps));
+                                setSetNumber(String(setNum));
+                              }}
+                              className={`text-xs font-semibold transition hover:opacity-85 ${activeTheme.text}`}
+                            >
+                              Use Last
+                            </button>
+                          </div>
+                          {pr && (
+                            <div className="flex items-center justify-between border-t border-zinc-900/60 pt-1.5 text-[10px] sm:text-[11px]">
+                              <div className="flex items-center gap-1.5 text-zinc-500">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] sm:text-[9px] font-bold bg-amber-950/30 text-amber-400 border border-amber-900/20 uppercase tracking-wider">
+                                  PR
+                                </span>
+                                <span>
+                                  {pr.weight} kg x {pr.reps}
+                                </span>
+                                <span className="text-[9px] sm:text-[10px] text-zinc-600">({pr.date})</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setWeight(String(pr.weight));
+                                  setReps(String(pr.reps));
+                                  setSetNumber(String(setNum));
+                                }}
+                                className="text-[10px] sm:text-[11px] font-medium text-zinc-400 hover:text-white transition"
+                              >
+                                Use PR
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                   ) : (
                     <p className="text-xs text-zinc-500 italic">
                       No previous sets logged.
@@ -1657,9 +1729,18 @@ export default function Home() {
                   )}
                 </div>
               </div>
-              <button className={`mt-4 h-11 w-full rounded-lg px-4 text-sm font-semibold transition hover:scale-[1.01] active:scale-[0.99] duration-150 ${activeTheme.button}`}>
-                Add set
-              </button>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <button className={`h-11 rounded-lg px-4 text-sm font-semibold transition hover:scale-[1.01] active:scale-[0.99] duration-150 ${activeTheme.button}`}>
+                  Add set
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => void addWorkout(e, true)}
+                  className={`h-11 rounded-lg border px-4 text-sm font-semibold transition hover:scale-[1.01] active:scale-[0.99] duration-150 ${activeTheme.outlineButton}`}
+                >
+                  ⚡ Add Drop Set
+                </button>
+              </div>
             </form>
 
             <section className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 backdrop-blur-md p-4">
